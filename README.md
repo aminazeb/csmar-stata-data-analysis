@@ -53,11 +53,12 @@ Recommended sequence (clean → merge → classify):
 ```
 
 What each step produces:
+
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31), year coverage, and (by default) parent-only; `--allow-consolidated` keeps consolidated too.
 - Step 2 (merge_filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source.
 - Step 3 (classify_data.py): classified outputs in `<data-dir>/filtered/classified`:
-   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
-   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
+  - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
+  - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
 
 Options (clean_data.py):
 
@@ -69,9 +70,11 @@ Options (clean_data.py):
 - `--debug` : print coverage stats per dataset and intersection size.
 
 Options (merge_filtered.py):
+
 - `--data-dir DIR` : base directory; script looks in `<data-dir>/filtered` first. Output defaults to `<data-dir>/filtered/merged_filtered.csv`.
 
 Options (classify_data.py):
+
 - `--data-dir DIR` : base directory; script looks for `filtered/merged_filtered.csv` (falls back to `merged_filtered.csv` in base). Output defaults to `<data-dir>/filtered/classified`.
 
 ## Outputs
@@ -79,6 +82,7 @@ Options (classify_data.py):
 Written to `filtered/` (or your `--output-dir`), one file per source, suffixed `_filtered` and same extension.
 
 The classify step writes to `<data-dir>/filtered/classified` by default:
+
 - parent_product_diversification.csv (ClassificationStandard=3)
 - consolidated_product_diversification.csv (ClassificationStandard=3)
 - parent_sales_diversification.csv (ClassificationStandard=2)
