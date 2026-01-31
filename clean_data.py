@@ -102,12 +102,17 @@ def read_dataset(path: Path) -> pd.DataFrame:
     return pd.read_excel(path)
 
 
-def apply_row_filter(df: pd.DataFrame, cfg: DatasetConfig) -> pd.DataFrame:
+def apply_row_filter(df: pd.DataFrame, cfg: DatasetConfig, include_consolidated: bool = False) -> pd.DataFrame:
     if not cfg.filter_col:
         return df
     if cfg.filter_col not in df.columns:
         raise KeyError(f"Expected filter column '{cfg.filter_col}' not found in {cfg.stem}")
     keep_values = {str(v) for v in cfg.filter_keep} if cfg.filter_keep else set()
+    if include_consolidated:
+        if cfg.key.startswith("mc_"):
+            keep_values.update({"1"})
+        if cfg.key in {"fs_combas", "fs_comins"}:
+            keep_values.update({"A"})
     filtered = df[df[cfg.filter_col].astype(str).isin(keep_values)]
     return filtered
 
@@ -177,6 +182,7 @@ def process(
     output_dir: Path,
     target_years: Set[int],
     min_years: int,
+    include_consolidated: bool = False,
     debug: bool = False,
 ) -> None:
     loaded = {}
@@ -184,7 +190,7 @@ def process(
     for cfg in DATASETS:
         path = find_input_file(cfg, data_dir)
         df = read_dataset(path)
-        df = apply_row_filter(df, cfg)
+        df = apply_row_filter(df, cfg, include_consolidated=include_consolidated)
         df = filter_year_end(df, cfg.date_cols[0] if cfg.date_cols else None)
         company_col = pick_first_existing(df, cfg.company_cols)
         year_col = pick_first_existing(df, cfg.date_cols) if cfg.date_cols else None
@@ -245,6 +251,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     parser.add_argument("--debug", action="store_true", help="Print extra diagnostics about company/year coverage.")
     parser.add_argument(
+        "--allow-consolidated",
+        action="store_true",
+        help="Also keep consolidated statements (StateTypeCode=1 for MC_*, Typrep=A for FS_*). Default keeps parent only.",
+    )
+    parser.add_argument(
         "--min-years",
         type=int,
         default=3,
@@ -267,6 +278,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         output_dir=output_dir,
         target_years=target_years,
         min_years=args.min_years,
+        include_consolidated=args.allow_consolidated,
         debug=args.debug,
     )
 

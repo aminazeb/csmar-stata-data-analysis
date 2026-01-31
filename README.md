@@ -1,6 +1,6 @@
 # Data Filtering Helper
 
-This project filters five datasets to keep companies present across them with sufficient year coverage. It targets parent-company statements and year-end (Dec 31) rows only.
+This project filters five datasets to keep companies present across them with sufficient year coverage. It targets parent-company statements and year-end (Dec 31) rows only. It also classifies sales and product-diversification data into parent and consolidated outputs with company metadata.
 
 ## Files expected (in --data-dir)
 
@@ -31,6 +31,28 @@ From the repo root:
 /Users/air/Documents/statadata/.venv/bin/python clean_data.py --data-dir /Users/air/Documents/statadata/data --debug
 ```
 
+To generate the four classified files (sales and product diversification, parent and consolidated):
+
+```bash
+/Users/air/Documents/statadata/.venv/bin/python classify_data.py --data-dir /Users/air/Documents/statadata/data
+```
+
+Note: `classify_data.py` will look for a `filtered/` subfolder under `--data-dir` and use it if present (so you can classify the cleaned outputs from `clean_data.py`).
+
+Include consolidated statements when filtering (optional):
+
+```bash
+/Users/air/Documents/statadata/.venv/bin/python clean_data.py --data-dir /Users/air/Documents/statadata/data --allow-consolidated
+```
+
+To produce a single merged wide file (outer join across filtered sources):
+
+```bash
+/Users/air/Documents/statadata/.venv/bin/python merge_filtered.py --data-dir /Users/air/Documents/statadata/data
+```
+
+This writes `merged_filtered.csv` under `<data-dir>/filtered` by default, keeping all rows from each filtered source. The script will look inside `<data-dir>/filtered` if it exists; otherwise it reads directly from `<data-dir>`.
+
 Options:
 
 - `--data-dir DIR` : folder containing the five source files (default: cwd).
@@ -43,9 +65,27 @@ Options:
 
 Written to `filtered/` (or your `--output-dir`), one file per source, suffixed `_filtered` and same extension.
 
+The classify step writes to `<data-dir>/classified` by default:
+
+- parent_product.csv (from MC_DiverOperationsPro)
+- consolidated_product.csv (from MC_DiverOperationsPro)
+- parent_product_diversification.csv (ClassificationStandard=3)
+- consolidated_product_diversification.csv (ClassificationStandard=3)
+- parent_sales_diversification.csv (ClassificationStandard=2)
+- consolidated_sales_diversification.csv (ClassificationStandard=2)
+
+Each classified file includes:
+
+- Symbol (normalized company ID) and EndDate (Dec 31 only)
+- StatementType: Parent or Consolidated (from StateTypeCode 2 or 1)
+- Product-level fields from MC_DiverOperationsPro: ProductName_EN, Currency, revenue/cost/profit, ratios, and growth metrics
+- Diversification fields from MC_DiverOperationsDegree (scope depends on ClassificationStandard): IsDiversifiedOperations, MainBusinessInvolvedF/MainBusinessInvolvedS, IncomeHHI, IncomeEntropyIndex, ClassificationStandard
+- Company metadata from CG_Co: ShortName_EN, IndustryCodeC (2012 CSRC)
+
 ## Notes
 
 - Year filtering uses the first date column per file (Accper for FS*\*, EndDate for MC*\*).
 - Company join: FS*\* `Stkcd` matches MC*\* `Symbol`; CG_Co uses `Stkcd` for presence only.
+- Classification uses the same ID normalization, filters Dec 31 rows, and splits by StateTypeCode (2 parent, 1 consolidated). Company metadata (ShortName_EN, IndustryCodeC) is joined when available.
 - CSVs with bad rows are retried with python engine and `on_bad_lines="skip"`.
 - Only Dec 31 rows are kept for dated files; change `filter_year_end` if your fiscal year-end differs.
