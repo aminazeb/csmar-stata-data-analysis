@@ -1,6 +1,6 @@
 # Data Filtering Helper
 
-This project filters five datasets to keep companies present across them with sufficient year coverage. It targets parent-company statements and year-end (Dec 31) rows only. It also classifies sales and product-diversification data into parent and consolidated outputs with company metadata.
+This project filters five datasets to keep companies present across them with sufficient year coverage (Dec 31 rows), then merges and classifies them into parent/consolidated sales and product diversification outputs with company metadata.
 
 ## Files expected (in --data-dir)
 
@@ -10,7 +10,7 @@ This project filters five datasets to keep companies present across them with su
 - MC_DiverOperationsDegree.(csv|xlsx|xls)
 - MC_DiverOperationsPro.(csv|xlsx|xls)
 
-## What the script does
+## What clean_data.py does
 
 1. Load each file (CSV or Excel).
 2. Filter to parent statements only:
@@ -37,38 +37,48 @@ To generate the four classified files (sales and product diversification, parent
 /Users/air/Documents/statadata/.venv/bin/python classify_data.py --data-dir /Users/air/Documents/statadata/data
 ```
 
-Note: `classify_data.py` will look for a `filtered/` subfolder under `--data-dir` and use it if present (so you can classify the cleaned outputs from `clean_data.py`).
-
-Include consolidated statements when filtering (optional):
+Recommended sequence (clean → merge → classify):
 
 ```bash
-/Users/air/Documents/statadata/.venv/bin/python clean_data.py --data-dir /Users/air/Documents/statadata/data --allow-consolidated
-```
+# 1) Filter raw sources (parent-only)
+/Users/air/Documents/statadata/.venv/bin/python clean_data.py --data-dir /Users/air/Documents/statadata/data
 
-To produce a single merged wide file (outer join across filtered sources):
+#    If you want consolidated too, add: --allow-consolidated
 
-```bash
+# 2) Merge filtered files into one wide file
 /Users/air/Documents/statadata/.venv/bin/python merge_filtered.py --data-dir /Users/air/Documents/statadata/data
+
+# 3) Classify from the merged file into product and diversification outputs
+/Users/air/Documents/statadata/.venv/bin/python classify_data.py --data-dir /Users/air/Documents/statadata/data
 ```
 
-This writes `merged_filtered.csv` under `<data-dir>/filtered` by default, keeping all rows from each filtered source. The script will look inside `<data-dir>/filtered` if it exists; otherwise it reads directly from `<data-dir>`.
+What each step produces:
+- Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31), year coverage, and (by default) parent-only; `--allow-consolidated` keeps consolidated too.
+- Step 2 (merge_filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source.
+- Step 3 (classify_data.py): classified outputs in `<data-dir>/filtered/classified`:
+   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
+   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
 
-Options:
+Options (clean_data.py):
 
 - `--data-dir DIR` : folder containing the five source files (default: cwd).
 - `--output-dir DIR` : where to write filtered outputs (default: <data-dir>/filtered).
 - `--years Y1 Y2 ...` : target years (default: 2018 2019 2020 2021 2022 2023 2024).
 - `--min-years N` : minimum count of target years required per company per dated file (default: 3).
+- `--allow-consolidated` : also keep consolidated statements (MC StateTypeCode=1, FS Typrep=A). Default keeps parent only.
 - `--debug` : print coverage stats per dataset and intersection size.
+
+Options (merge_filtered.py):
+- `--data-dir DIR` : base directory; script looks in `<data-dir>/filtered` first. Output defaults to `<data-dir>/filtered/merged_filtered.csv`.
+
+Options (classify_data.py):
+- `--data-dir DIR` : base directory; script looks for `filtered/merged_filtered.csv` (falls back to `merged_filtered.csv` in base). Output defaults to `<data-dir>/filtered/classified`.
 
 ## Outputs
 
 Written to `filtered/` (or your `--output-dir`), one file per source, suffixed `_filtered` and same extension.
 
-The classify step writes to `<data-dir>/classified` by default:
-
-- parent_product.csv (from MC_DiverOperationsPro)
-- consolidated_product.csv (from MC_DiverOperationsPro)
+The classify step writes to `<data-dir>/filtered/classified` by default:
 - parent_product_diversification.csv (ClassificationStandard=3)
 - consolidated_product_diversification.csv (ClassificationStandard=3)
 - parent_sales_diversification.csv (ClassificationStandard=2)
