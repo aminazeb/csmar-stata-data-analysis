@@ -15,6 +15,8 @@ class DatasetConfig:
     date_cols: Sequence[str]
     filter_col: Optional[str] = None
     filter_keep: Optional[Sequence[str]] = None
+    participates_in_coverage: bool = True
+    enforce_year_end: bool = True
 
 
 DATASETS: List[DatasetConfig] = [
@@ -60,6 +62,36 @@ DATASETS: List[DatasetConfig] = [
         date_cols=("EndDate",),
         filter_col="StateTypeCode",
         filter_keep=("2", 2),
+    ),
+    DatasetConfig(
+        key="bdt_fin",
+        stem="BDT_FinDistMertonDD",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Symbol",),
+        date_cols=("Enddate",),
+    ),
+    DatasetConfig(
+        key="ofdi_finindex",
+        stem="OFDI_FININDEX",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Symbol",),
+        date_cols=("EndDate",),
+    ),
+    DatasetConfig(
+        key="cg_ybasic",
+        stem="CG_Ybasic",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Stkcd",),
+        date_cols=("Reptdt",),
+    ),
+    DatasetConfig(
+        key="ifs_emp",
+        stem="IFS_IndRegMSELE",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("IndustryCode",),
+        date_cols=("SgnYear",),
+        participates_in_coverage=False,
+        enforce_year_end=False,
     ),
 ]
 
@@ -187,15 +219,19 @@ def process(
 ) -> None:
     loaded = {}
     metadata = {}
+    coverage_sets = []
     for cfg in DATASETS:
         path = find_input_file(cfg, data_dir)
         df = read_dataset(path)
         df = apply_row_filter(df, cfg, include_consolidated=include_consolidated)
-        df = filter_year_end(df, cfg.date_cols[0] if cfg.date_cols else None)
+        if cfg.enforce_year_end:
+            df = filter_year_end(df, cfg.date_cols[0] if cfg.date_cols else None)
         company_col = pick_first_existing(df, cfg.company_cols)
         year_col = pick_first_existing(df, cfg.date_cols) if cfg.date_cols else None
         loaded[cfg.key] = (cfg, path, df, company_col, year_col)
-        coverage = companies_with_full_years(df, company_col, year_col, target_years, min_years)
+        coverage = companies_with_full_years(df, company_col, year_col, target_years, min_years) if cfg.participates_in_coverage else set()
+        if cfg.participates_in_coverage:
+            coverage_sets.append(coverage)
         years_present = None
         if year_col:
             years_series = normalize_year(df, year_col).dropna().astype(int)
@@ -208,11 +244,14 @@ def process(
             "row_count": len(df),
             "unique_companies": df[company_col].nunique(),
             "years_present": years_present,
+            "participates": cfg.participates_in_coverage,
         }
 
-    common_companies = set.intersection(*(meta["coverage"] for meta in metadata.values()))
+    if not coverage_sets:
+        raise RuntimeError("No datasets participate in company coverage; cannot compute common companies.")
+    common_companies = set.intersection(*coverage_sets)
     print(
-        f"Companies with coverage across all datasets (>= {min_years} of {sorted(target_years)}): "
+        f"Companies with coverage across coverage-participating datasets (>= {min_years} of {sorted(target_years)}): "
         f"{len(common_companies)}"
     )
     for cfg_key, meta in metadata.items():
@@ -220,19 +259,29 @@ def process(
         if meta["years_present"]:
             yr_min, yr_max, yr_samples = meta["years_present"]
             yr_info = f" years min/max: {yr_min}-{yr_max}"
+        coverage_text = len(meta["coverage"]) if meta["participates"] else "n/a (skipped)"
         print(
             f"- {cfg_key}: rows={meta['row_count']}, unique companies={meta['unique_companies']}, "
-            f"companies meeting threshold={len(meta['coverage'])}.{yr_info}"
+            f"companies meeting threshold={coverage_text}.{yr_info}"
         )
 
     if not common_companies:
         raise RuntimeError(
-            "No companies meet the coverage requirement across all datasets and target years. "
+            "No companies meet the coverage requirement across coverage-participating datasets and target years. "
             "Check counts above; likely some files lack the full year range or have mismatched company codes."
         )
 
     for cfg_key, (cfg, path, df, company_col, year_col) in loaded.items():
-        filtered = filter_for_companies_and_years(df, company_col, year_col, common_companies, target_years)
+        if cfg.participates_in_coverage:
+            filtered = filter_for_companies_and_years(df, company_col, year_col, common_companies, target_years)
+        else:
+            # For non-participating datasets (e.g., industry-level), only filter by target years when possible
+            filtered = df.copy()
+            if year_col:
+                filtered["__year"] = normalize_year(filtered, year_col)
+                filtered = filtered[filtered["__year"].isin(target_years)]
+                filtered = filtered.drop(columns=["__year"])
+            filtered = filtered.reset_index(drop=True)
         output_path = output_dir / f"{path.stem}_filtered{path.suffix}"
         save_dataset(filtered, output_path)
         print(f"Saved filtered {cfg_key} -> {output_path} (rows={len(filtered)})")

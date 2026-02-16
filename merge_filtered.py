@@ -40,10 +40,14 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
     # Expected filtered files
     files = {
         "cg_co": source_dir / "CG_Co_filtered.xlsx",
+        "cg_ybasic": source_dir / "CG_Ybasic_filtered.xlsx",
         "fs_combas": source_dir / "FS_Combas_filtered.xlsx",
         "fs_comins": source_dir / "FS_Comins_filtered.xlsx",
         "mc_degree": source_dir / "MC_DiverOperationsDegree_filtered.csv",
         "mc_pro": source_dir / "MC_DiverOperationsPro_filtered.csv",
+        "bdt_fin": source_dir / "BDT_FinDistMertonDD_filtered.xlsx",
+        "ofdi_finindex": source_dir / "OFDI_FININDEX_filtered.xlsx",
+        "ifs_emp": source_dir / "IFS_IndRegMSELE_filtered.xlsx",
     }
 
     # Load available files
@@ -57,6 +61,11 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
             if alt:
                 df = read_any(alt[0])
                 dfs[key] = df
+            elif key == "ifs_emp":
+                # Fall back to unfiltered industry employees file if filtered not present
+                raw = data_dir / "IFS_IndRegMSELE.xlsx"
+                if raw.exists():
+                    dfs[key] = read_any(raw)
 
     if not dfs:
         raise FileNotFoundError(f"No filtered files found in {source_dir}")
@@ -74,11 +83,15 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
         "fs_comins": "Accper",
         "mc_degree": "EndDate",
         "mc_pro": "EndDate",
+        "bdt_fin": "Enddate",
+        "ofdi_finindex": "EndDate",
+        "cg_ybasic": "Reptdt",
         "cg_co": None,
+        "ifs_emp": None,
     }
 
-    # Build spine from dated sources
-    dated_keys = [k for k, col in date_map.items() if col and k in dfs]
+    # Build spine from dated sources (skip industry-level employees which lack Symbol)
+    dated_keys = [k for k, col in date_map.items() if col and k in dfs and k != "ifs_emp"]
     spine_sources = []
     for k in dated_keys:
         declared_col = date_map[k]
@@ -100,7 +113,10 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
     merged = spine.copy()
 
     # Join each source
-    for key, df in dfs.items():
+    # Industry employees handled separately later
+    for key, df in list(dfs.items()):
+        if key == "ifs_emp":
+            continue
         declared_col = date_map.get(key)
         date_col = declared_col
         if declared_col and declared_col not in df.columns:
@@ -118,6 +134,21 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
         rename_cols = {c: f"{key}_{c}" for c in temp.columns if c not in key_cols}
         temp = temp.rename(columns=rename_cols)
         merged = merged.merge(temp, how="left", left_on=left_on, right_on=right_on)
+
+    # Optionally enrich with industry-level employees using industry code and year
+    if "ifs_emp" in dfs:
+        ind_df = dfs["ifs_emp"].copy()
+        if "IndustryCode" in ind_df.columns and "SgnYear" in ind_df.columns:
+            merged["__Year"] = pd.to_datetime(merged["Date"], errors="coerce").dt.year.astype("Int64")
+            ind_df["SgnYear"] = pd.to_numeric(ind_df["SgnYear"], errors="coerce").astype("Int64")
+            ind_df = ind_df.rename(columns={"LegalEntityNum": "ifs_LegalEntityNum", "EmployeeNum": "ifs_EmployeeNum"})
+            merged = merged.merge(
+                ind_df,
+                how="left",
+                left_on=["__Year", "cg_co_Nnindcd"],
+                right_on=["SgnYear", "IndustryCode"],
+            )
+            merged = merged.drop(columns=[c for c in ["__Year", "SgnYear", "IndustryCode"] if c in merged.columns])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_csv(output_path, index=False)
