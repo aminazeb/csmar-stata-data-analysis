@@ -70,15 +70,16 @@ Recommended sequence (clean → merge → metrics → classify → summary):
 What each step produces:
 
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31) where applicable, year coverage, and parent-only by default; `--allow-consolidated` keeps consolidated too. IFS is filtered only by target years.
-- Step 2 (merge*filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source; CG_Ybasic fields are prefixed `cg_ybasic*`, BDT `bdt*fin*_`, OFDI `ofdi*finindex*_`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
+- Step 2 (merge*filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source; CG_Ybasic fields are prefixed `cg_ybasic*`, BDT `bdt*fin*`, OFDI `ofdi*finindex*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
 - Step 3 (apply_analytics.py): appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, SalesGrowth into merged_filtered.csv. Add `--output PATH` only if you also want a standalone metrics CSV.
 - Step 4 (classify_data.py): classified outputs in `<data-dir>/filtered/classified`:
   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
+- Step 5 (report_summary.py): summary of filters, per-source counts, merged stats written to `docs/report_summary.txt` by default (or custom `--output`).
 
 Options (clean_data.py):
 
-- `--data-dir DIR` : folder containing the five source files (default: cwd).
+- `--data-dir DIR` : folder containing the source files (default: cwd).
 - `--output-dir DIR` : where to write filtered outputs (default: <data-dir>/filtered).
 - `--years Y1 Y2 ...` : target years (default: 2018 2019 2020 2021 2022 2023 2024).
 - `--min-years N` : minimum count of target years required per company per dated file (default: 3). Coverage uses CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, BDT_FinDistMertonDD; FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX are excluded from coverage calc but still trimmed to the common companies (year-filtered when dated); IFS_IndRegMSELE is excluded and filtered by target years only.
@@ -98,6 +99,11 @@ Options (apply_analytics.py):
 - `--data-dir DIR` : base directory; script looks for `filtered/merged_filtered.csv` (falls back to `merged_filtered.csv` in base).
 - `--output PATH` : optional separate Altman/analytics CSV; omit to only update merged_filtered.csv.
 - `--no-update-merged` : skip writing derived columns back into merged_filtered.csv.
+
+Options (report_summary.py):
+
+- `--data-dir DIR` : base directory; script looks for `filtered/merged_filtered.csv` (falls back to `merged_filtered.csv` in base).
+- `--output PATH` : optional path to write the report; defaults to `docs/report_summary.txt` alongside the scripts.
 
 Options (report_summary.py):
 
