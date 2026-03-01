@@ -1,0 +1,27 @@
+Filters applied
+---------------
+- Year-end filter: applied to all dated firm-level datasets except IFS_IndRegMSELE
+- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies (year-filtered when dated): FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only
+- Parent-only by default; consolidated included when --allow-consolidated
+
+Filtered source counts
+----------------------
+- bdt_fin: rows=4820, unique_ids=1063, years=2018-2022 (5 uniq)
+- cg_co: rows=1063, unique_ids=1063
+- cg_ybasic: rows=6941, unique_ids=1063, years=2018-2024 (7 uniq)
+- fn_fn046: rows=21068, unique_ids=523, years=2018-2024 (7 uniq)
+- fs_combas: rows=6946, unique_ids=1063, years=2018-2024 (7 uniq)
+- fs_comins: rows=6946, unique_ids=1063, years=2018-2024 (7 uniq)
+- fs_comscfd: rows=6946, unique_ids=1063, years=2018-2024 (7 uniq)
+- fs_comscfi: rows=75, unique_ids=27, years=2018-2024 (7 uniq)
+- ifs_emp: rows=1116
+- mc_degree: rows=9005, unique_ids=1063, years=2018-2024 (7 uniq)
+- mc_pro: rows=19031, unique_ids=1063, years=2018-2024 (7 uniq)
+- ofdi_finindex: rows=3573, unique_ids=771, years=2018-2022 (5 uniq)
+
+Merged file summary
+-------------------
+Rows: 139,403
+Unique companies (Symbol): 1,063
+Year span: 2018 - 2024 (7 unique years)
+StateTypeCode counts (mc_pro_StateTypeCode): 2.0:130539, nan:8864

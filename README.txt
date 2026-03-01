@@ -21,13 +21,11 @@ This project filters multiple datasets to keep companies present across them wit
 
 1. Load each file (CSV or Excel).
 2. Filter to parent statements by default:
-
-- FS_Combas, FS_Comins: `Typrep = B` (add consolidated with `--allow-consolidated`).
-- MC\_\*: `StateTypeCode = 2` (add consolidated with `--allow-consolidated`).
-
+  - FS_Combas, FS_Comins, FS_Comscfd, FS_Comscfi, FN_FN046: `Typrep = B` (add consolidated with `--allow-consolidated`).
+  - MC\_\*: `StateTypeCode = 2` (add consolidated with `--allow-consolidated`).
 3. Keep only year-end rows (Dec 31) for dated firm-level files; industry-level IFS data keeps all years (only filtered by target years).
 4. Normalize company IDs (strip, drop trailing `.0`).
-5. For coverage-participating dated files, keep companies that appear in at least `min_years` of the target years (default 3). Coverage calculation uses only CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, and BDT_FinDistMertonDD.
+5. For coverage-participating dated files, keep companies that appear in at least `min_years` of the target years (default now 3). Coverage calculation uses only CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, and BDT_FinDistMertonDD.
 6. Intersect companies across those coverage-participating datasets. Firm-level files excluded from the coverage calculation (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to that common company set and filtered by target years when dated; IFS_IndRegMSELE is excluded from coverage and filtered by target years only.
 7. Write filtered outputs to `filtered/` under the data dir.
 
@@ -46,7 +44,7 @@ To generate the four classified files (sales and product diversification, parent
 /Users/air/Documents/statadata/.venv/bin/python classify_data.py --data-dir /Users/air/Documents/statadata/data
 ```
 
-Recommended sequence (clean → merge → metrics → classify → summary):
+Recommended sequence (clean → merge → metrics → classify):
 
 ```bash
 # 1) Filter raw sources (parent-only)
@@ -70,7 +68,7 @@ Recommended sequence (clean → merge → metrics → classify → summary):
 What each step produces:
 
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31) where applicable, year coverage, and parent-only by default; `--allow-consolidated` keeps consolidated too. IFS is filtered only by target years.
-- Step 2 (merge*filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source; CG_Ybasic fields are prefixed `cg_ybasic*`, BDT `bdt*fin*_`, OFDI `ofdi*finindex*_`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
+- Step 2 (merge_filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source; CG_Ybasic fields are prefixed `cg_ybasic_`, BDT `bdt_fin_*`, OFDI `ofdi_finindex_*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
 - Step 3 (apply_analytics.py): appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, SalesGrowth into merged_filtered.csv. Add `--output PATH` only if you also want a standalone metrics CSV.
 - Step 4 (classify_data.py): classified outputs in `<data-dir>/filtered/classified`:
   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
@@ -78,11 +76,11 @@ What each step produces:
 
 Options (clean_data.py):
 
-- `--data-dir DIR` : folder containing the five source files (default: cwd).
+- `--data-dir DIR` : folder containing the source files (default: cwd).
 - `--output-dir DIR` : where to write filtered outputs (default: <data-dir>/filtered).
 - `--years Y1 Y2 ...` : target years (default: 2018 2019 2020 2021 2022 2023 2024).
-- `--min-years N` : minimum count of target years required per company per dated file (default: 3). Coverage uses CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, BDT_FinDistMertonDD; FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX are excluded from coverage calc but still trimmed to the common companies (year-filtered when dated); IFS_IndRegMSELE is excluded and filtered by target years only.
-- `--allow-consolidated` : also keep consolidated statements (MC StateTypeCode=1, FS Typrep=A). Default keeps parent only.
+- `--min-years N` : minimum count of target years required per company per dated file (default: 3). Coverage uses CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX are excluded from coverage calc but still trimmed to the common companies (year-filtered when dated); IFS_IndRegMSELE is excluded and filtered by target years only.
+- `--allow-consolidated` : also keep consolidated statements (MC StateTypeCode=1, FS/FN Typrep=A). Default keeps parent only.
 - `--debug` : print coverage stats per dataset and intersection size.
 
 Options (merge_filtered.py):

@@ -1,0 +1,89 @@
+# Merged File Schema (merged_filtered.csv)
+
+This documents the key columns in `filtered/merged_filtered.csv`, focusing on appended/derived fields and the newly added FS/FN sources. Column names in the merged file are prefixed by source key plus the original column name (e.g., `fs_comscfd_C001000000`).
+
+## Core keys
+
+- `Symbol` – normalized company code (from `Stkcd`/`Symbol` across sources)
+- `Date` – statement date (from `Accper` or `EndDate` depending on source)
+
+## Analytics columns (added by apply_analytics.py)
+
+- `AltmanZScore` – 1.2·X1 + 1.4·X2 + 3.3·X3 + 0.6·X4 + 0.999·X5
+- `X1_WorkingCapitalToTotalAssets` – (Current Assets − Current Liabilities) / Total Assets
+- `X2_RetainedEarningsToTotalAssets` – Retained Earnings / Total Assets
+- `X3_EBITToTotalAssets` – Operating Profit (EBIT) / Total Assets
+- `X4_MarketValueToTotalLiabilities` – Market Value of equity / Total Liabilities
+- `X5_SalesToTotalAssets` – Operating Revenue / Total Assets
+- `FirmSize_LogTotalAssets` – ln(Total Assets)
+- `Leverage` – Total Liabilities / Total Assets
+- `ROA` – Net Profit / Total Assets
+- `FixedAssetsRatio` – Fixed Assets / Total Assets
+- `SalesGrowth` – YoY pct change of Operating Revenue per `Symbol`
+
+## New source blocks
+
+Each block lists the merged prefix and key columns from the newly added datasets.
+
+### FS*Comscfd (prefix `fs_comscfd*`)
+
+- `fs_comscfd_Stkcd` – stock code
+- `fs_comscfd_ShortName_EN` – stock short name
+- `fs_comscfd_Accper` – statement date
+- `fs_comscfd_Typrep` – statement type (A consolidated, B parent)
+- `fs_comscfd_C0d1011000` – Net Increase in Repurchase Business Capital
+- `fs_comscfd_C001000000` – Net Cash Flow from Operating Activities
+- `fs_comscfd_C003002000` – Proceeds from Borrowings
+
+### FS*Comscfi (prefix `fs_comscfi*`)
+
+- `fs_comscfi_Stkcd` – stock code
+- `fs_comscfi_ShortName_EN` – stock short name
+- `fs_comscfi_Accper` – statement date
+- `fs_comscfi_Typrep` – statement type (A consolidated, B parent)
+- `fs_comscfi_D000103000` – Depreciation of Fixed Assets / Oil & Gas / Bearer Bio Assets
+- `fs_comscfi_D000119000` – Depreciation and Amortization of Investment Property
+- `fs_comscfi_D000120000` – Depreciation and Amortization of Use Right Assets
+
+### FN*FN046 (prefix `fn_fn046*`)
+
+- `fn_fn046_Stkcd` – stock code
+- `fn_fn046_ShortName_EN` – stock short name
+- `fn_fn046_Accper` – statement date
+- `fn_fn046_Typrep` – statement type (A/B/C/D consolidated/parent current/prior)
+- `fn_fn046_DataSources` – announcement source (0 = periodical report)
+- `fn_fn046_SubjectCode` – equity subject code (1–15)
+- `fn_fn046_SubjectName_en` – subject name
+- `fn_fn046_Fn04601` – Balance at end of prior period
+- `fn_fn046_Fn04605` – Current beginning balance
+- `fn_fn046_Fn04607` – Net Profit
+- `fn_fn046_Fn04627` – Profit Distribution
+- `fn_fn046_Fn04633` – Interior Carry-over of Stockholders’ Equity
+- `fn_fn046_Fn04638` – Other Items for Interior Carry-over of Stockholders’ Equity
+- `fn_fn046_Fn04643` – Ending Balance
+
+## Source column meanings (by prefix)
+
+- `cg_co_` (CG_Co metadata): `Stkcd` stock code, `ShortName_EN` name, `Nnindcd`/`IndustryCodeC` industry codes, `Stktype`, `ListedDate`.
+- `cg_ybasic_` (firm employees): `Reptdt` date, `Stkcd`, employee counts by firm.
+- `fs_combas_` (balance sheet): `Accper` date, `Typrep` statement type (A consolidated, B parent), `A001000000` total assets, `A001100000` current assets, `A002000000` total liabilities, `A002100000` current liabilities, `A001212000` fixed assets.
+- `fs_comins_` (income statement): `Accper`, `Typrep`, `B001101000` operating revenue, `B001000000` net profit, `B001300000` operating profit/EBIT, `B002000000` retained earnings.
+- `fs_comscfd_` (cash flow): `Accper`, `Typrep`, `C001000000` net cash from operating activities, `C003002000` proceeds from borrowings, `C0d1011000` net increase in repurchase business capital.
+- `fs_comscfi_` (depreciation): `Accper`, `Typrep`, `D000103000` depreciation of fixed/oil/bio assets, `D000119000` depreciation/amortization of investment property, `D000120000` depreciation/amortization of use-right assets.
+- `fn_fn046_` (equity changes): `Accper`, `Typrep` (A/B/C/D current/prior consolidated/parent), `SubjectCode`/`SubjectName_en`, balances (`Fn04601` prior end, `Fn04605` current begin, `Fn04607` net profit, `Fn04627` profit distribution, `Fn04633` interior carry-over, `Fn04638` other carry-over, `Fn04643` ending balance).
+- `mc_pro_` (product operations): `EndDate`, `StateTypeCode` (1 consolidated, 2 parent), product names, revenue/cost/profit, ratios, growth metrics.
+- `mc_degree_` (diversification): `EndDate`, `StateTypeCode`, `ClassificationStandard` (2 sales, 3 product), diversification flags/HHI/entropy and optional product-level fields.
+- `bdt_fin_` (BDT_FinDistMertonDD): `Enddate`, market value, distress/valuation metrics.
+- `ofdi_finindex_` (OFDI_FININDEX): `EndDate`, financial index/Tobin-Q style metrics.
+- `ifs_` (IFS_IndRegMSELE): `SgnYear` year, `IndustryCode`, industry-level employee counts (`ifs_EmployeeNum`, `ifs_LegalEntityNum`).
+
+Notes on filters
+
+- Year-end filter applies to dated firm-level datasets; IFS_IndRegMSELE uses `SgnYear` only (no Dec 31 filter).
+- Coverage intersection (min-years=3) applies to CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, BDT; excluded from coverage: FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX, IFS_IndRegMSELE.
+
+Notes:
+
+- All merged columns keep their source prefixes to avoid collisions.
+- Dates are normalized to `Date` for joining; original date columns remain prefixed.
+- Company IDs are normalized to strings (trailing `.0` removed).

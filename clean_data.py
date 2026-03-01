@@ -1,4 +1,5 @@
 import argparse
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set
@@ -46,6 +47,36 @@ DATASETS: List[DatasetConfig] = [
         filter_keep=("B",),  # B = Parent Statements
     ),
     DatasetConfig(
+        key="fs_comscfd",
+        stem="FS_Comscfd",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Stkcd",),
+        date_cols=("Accper",),
+        filter_col="Typrep",
+        filter_keep=("B",),  # B = Parent Statements
+        participates_in_coverage=False,
+    ),
+    DatasetConfig(
+        key="fs_comscfi",
+        stem="FS_Comscfi",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Stkcd",),
+        date_cols=("Accper",),
+        filter_col="Typrep",
+        filter_keep=("B",),  # B = Parent Statements
+        participates_in_coverage=False,
+    ),
+    DatasetConfig(
+        key="fn_fn046",
+        stem="FN_FN046",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Stkcd",),
+        date_cols=("Accper",),
+        filter_col="Typrep",
+        filter_keep=("B",),  # B = Parent Statements
+        participates_in_coverage=False,
+    ),
+    DatasetConfig(
         key="mc_diversified_degree",
         stem="MC_DiverOperationsDegree",
         expected_exts=(".csv", ".xlsx", ".xls"),
@@ -76,6 +107,7 @@ DATASETS: List[DatasetConfig] = [
         expected_exts=(".xlsx", ".xls"),
         company_cols=("Symbol",),
         date_cols=("EndDate",),
+        participates_in_coverage=False,
     ),
     DatasetConfig(
         key="cg_ybasic",
@@ -143,7 +175,7 @@ def apply_row_filter(df: pd.DataFrame, cfg: DatasetConfig, include_consolidated:
     if include_consolidated:
         if cfg.key.startswith("mc_"):
             keep_values.update({"1"})
-        if cfg.key in {"fs_combas", "fs_comins"}:
+        if cfg.key in {"fs_combas", "fs_comins", "fs_comscfd", "fs_comscfi", "fn_fn046"}:
             keep_values.update({"A"})
     filtered = df[df[cfg.filter_col].astype(str).isin(keep_values)]
     return filtered
@@ -221,8 +253,15 @@ def process(
     metadata = {}
     coverage_sets = []
     for cfg in DATASETS:
+        print(f"[clean] loading {cfg.stem}...", flush=True)
         path = find_input_file(cfg, data_dir)
+        t0 = time.perf_counter()
         df = read_dataset(path)
+        print(
+            f"[clean] loaded {cfg.stem}: rows={len(df)}, cols={df.shape[1]}, "
+            f"elapsed={time.perf_counter() - t0:.1f}s",
+            flush=True,
+        )
         df = apply_row_filter(df, cfg, include_consolidated=include_consolidated)
         if cfg.enforce_year_end:
             df = filter_year_end(df, cfg.date_cols[0] if cfg.date_cols else None)
@@ -274,14 +313,17 @@ def process(
     for cfg_key, (cfg, path, df, company_col, year_col) in loaded.items():
         if cfg.participates_in_coverage:
             filtered = filter_for_companies_and_years(df, company_col, year_col, common_companies, target_years)
-        else:
-            # For non-participating datasets (e.g., industry-level), only filter by target years when possible
+        elif cfg.key == "ifs_emp":
+            # Industry-level file: filter by years only
             filtered = df.copy()
             if year_col:
                 filtered["__year"] = normalize_year(filtered, year_col)
                 filtered = filtered[filtered["__year"].isin(target_years)]
                 filtered = filtered.drop(columns=["__year"])
             filtered = filtered.reset_index(drop=True)
+        else:
+            # Excluded from coverage computation but still aligned to the common companies and target years
+            filtered = filter_for_companies_and_years(df, company_col, year_col, common_companies, target_years)
         output_path = output_dir / f"{path.stem}_filtered{path.suffix}"
         save_dataset(filtered, output_path)
         print(f"Saved filtered {cfg_key} -> {output_path} (rows={len(filtered)})")
