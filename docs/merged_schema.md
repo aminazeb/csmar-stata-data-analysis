@@ -80,7 +80,7 @@ Each block lists the merged prefix and key columns from the newly added datasets
 Notes on filters
 
 - Year-end filter applies to dated firm-level datasets; IFS_IndRegMSELE uses `SgnYear` only (no Dec 31 filter).
-- Coverage intersection (min-years=3) uses only CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_* and BDT_FinDistMertonDD. Firm-level datasets excluded from coverage (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to the common company set (and target years when dated); IFS_IndRegMSELE is excluded and filtered by years only.
+- Coverage intersection (min-years=3) uses only CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\* and BDT_FinDistMertonDD. Firm-level datasets excluded from coverage (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to the common company set (and target years when dated); IFS_IndRegMSELE is excluded and filtered by years only.
 
 Notes:
 
