@@ -38,12 +38,11 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise KeyError(f"Missing required columns in merged data: {missing}")
 
-    dates = pd.to_datetime(df.get("Date"), errors="coerce")
-    year_end_mask = dates.dt.month.eq(12) & dates.dt.day.eq(31)
-    df = df.loc[year_end_mask].copy()
-    dates = dates.loc[year_end_mask]
+    years = pd.to_numeric(df.get("Date"), errors="coerce").astype("Int64")
+    df = df.loc[years.notna()].copy()
+    df["Date"] = years.loc[years.notna()].astype(int)
     if df.empty:
-        raise ValueError("No year-end (Dec 31) records found in merged data; cannot compute metrics.")
+        raise ValueError("No valid year values found in merged data; cannot compute metrics.")
 
     ta = df[REQUIRED_COLUMNS["total_assets"]]
     ca = df[REQUIRED_COLUMNS["current_assets"]]
@@ -79,8 +78,7 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     out["ROA"] = safe_div(net_profit, ta)
     out["FixedAssetsRatio"] = safe_div(fixed_assets, ta)
 
-    dates = pd.to_datetime(df.get("Date"), errors="coerce")
-    growth_frame = pd.DataFrame({"Symbol": df.get("Symbol"), "Date": dates, "sales": sales})
+    growth_frame = pd.DataFrame({"Symbol": df.get("Symbol"), "Date": df.get("Date"), "sales": sales})
     growth_frame = growth_frame.sort_values(["Symbol", "Date"])
     growth_frame["SalesGrowth"] = growth_frame.groupby("Symbol")[["sales"]].pct_change()
     out["SalesGrowth"] = growth_frame.sort_index()["SalesGrowth"]

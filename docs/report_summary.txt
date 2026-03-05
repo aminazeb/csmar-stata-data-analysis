@@ -3,6 +3,7 @@ Filters applied
 - Year-end filter: applied to all dated firm-level datasets except IFS_IndRegMSELE
 - Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies (year-filtered when dated): FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only
 - Parent-only by default; consolidated included when --allow-consolidated
+- Merged file collapsed to one row per company-year (numeric columns averaged); Date is the year; serial_number is the first column (sequential per Symbol)
 
 Filtered source counts
 ----------------------
@@ -21,7 +22,7 @@ Filtered source counts
 
 Merged file summary
 -------------------
-Rows: 139,403
+Rows: 6,988
 Unique companies (Symbol): 1,063
 Year span: 2018 - 2024 (7 unique years)
-StateTypeCode counts (mc_pro_StateTypeCode): 2.0:130539, nan:8864
+StateTypeCode counts (mc_pro_StateTypeCode): 2.0:4568, nan:2420

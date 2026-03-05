@@ -1,6 +1,6 @@
 # Data Filtering Helper
 
-This project filters multiple datasets to keep companies present across them with sufficient year coverage (Dec 31 rows for firm-level data), merges them into one wide file, computes Altman Z and related financial ratios, and classifies into parent/consolidated sales and product diversification outputs with company metadata.
+This project filters multiple datasets to keep companies present across them with sufficient year coverage (Dec 31 rows for firm-level data), merges them into one wide file collapsed to one row per company-year (averaging numeric duplicates), computes Altman Z and related financial ratios, and optionally classifies into parent/consolidated sales and product diversification outputs with company metadata.
 
 ## Files expected (in --data-dir)
 
@@ -31,20 +31,13 @@ This project filters multiple datasets to keep companies present across them wit
 
 ## Run commands
 
-From the repo root:
+From the repo root (default: years 2018-2024, min 3 years coverage, parent-only, year-end only):
 
 ```bash
-# Default: years 2018-2024, min 3 years coverage, parent-only, year-end only
 /Users/air/Documents/statadata/.venv/bin/python clean_data.py --data-dir /Users/air/Documents/statadata/data --debug
 ```
 
-To generate the four classified files (sales and product diversification, parent and consolidated):
-
-```bash
-/Users/air/Documents/statadata/.venv/bin/python classify_data.py --data-dir /Users/air/Documents/statadata/data
-```
-
-Recommended sequence (clean → merge → metrics → classify):
+Recommended sequence (clean → merge → metrics → summary; add classify if needed):
 
 ```bash
 # 1) Filter raw sources (parent-only)
@@ -52,13 +45,13 @@ Recommended sequence (clean → merge → metrics → classify):
 
 #    If you want consolidated too, add: --allow-consolidated
 
-# 2) Merge filtered files into one wide file
+# 2) Merge filtered files into one wide file, collapsing to one row per company-year and adding serial_number (first column)
 /Users/air/Documents/statadata/.venv/bin/python merge_filtered.py --data-dir /Users/air/Documents/statadata/data
 
 # 3) Compute Altman Z + derived metrics and append to merged
 /Users/air/Documents/statadata/.venv/bin/python apply_analytics.py --data-dir /Users/air/Documents/statadata/data
 
-# 4) Classify from the merged file into product and diversification outputs
+# 4) (Optional) Classify from the merged file into product and diversification outputs
 /Users/air/Documents/statadata/.venv/bin/python classify_data.py --data-dir /Users/air/Documents/statadata/data
 
 # 5) Generate a summary report of filters and counts (writes to docs/report_summary.txt by default)
@@ -68,9 +61,9 @@ Recommended sequence (clean → merge → metrics → classify):
 What each step produces:
 
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31) where applicable, year coverage, and parent-only by default; `--allow-consolidated` keeps consolidated too. IFS is filtered only by target years.
-- Step 2 (merge_filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, retaining all rows from each filtered source; CG_Ybasic fields are prefixed `cg_ybasic_`, BDT `bdt_fin_*`, OFDI `ofdi_finindex_*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
+- Step 2 (merge_filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, collapsing to one row per company-year (averaging numeric duplicates, first non-numeric), normalizing `Date` to the year integer, and adding a sequential `serial_number` per `Symbol` as the first column; CG_Ybasic fields are prefixed `cg_ybasic_`, BDT `bdt_fin_*`, OFDI `ofdi_finindex_*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
 - Step 3 (apply_analytics.py): appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, SalesGrowth into merged_filtered.csv. Add `--output PATH` only if you also want a standalone metrics CSV.
-- Step 4 (classify_data.py): classified outputs in `<data-dir>/filtered/classified`:
+- Step 4 (classify_data.py, optional): classified outputs in `<data-dir>/filtered/classified`:
   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
 
@@ -124,9 +117,9 @@ Each classified file includes:
 
 ## Notes
 
-- Year filtering uses the first date column per file (Accper for FS*\*, EndDate for MC*\*).
+- Year filtering uses the first date column per file (Accper for FS*\*, EndDate for MC*\*). The merged file stores `Date` as the year after collapsing company-year duplicates.
 - Company join: FS*\* `Stkcd` matches MC*\* `Symbol`; CG_Co uses `Stkcd` for presence only.
 - Classification uses the same ID normalization, filters Dec 31 rows, and splits by StateTypeCode (2 parent, 1 consolidated). Company metadata (ShortName_EN, IndustryCodeC) is joined when available.
-- Altman/metrics use Dec 31 rows and rely on FS/MC/BDT/OFDI fields; outputs are appended to merged (a separate CSV is only written if `--output` is provided).
+- Altman/metrics operate on the year-level `Date` produced by the merged file (derived from Dec 31 rows in clean_data); outputs are appended to merged (a separate CSV is only written if `--output` is provided).
 - CSVs with bad rows are retried with python engine and `on_bad_lines="skip"`.
 - Only Dec 31 rows are kept for dated files; change `filter_year_end` if your fiscal year-end differs.

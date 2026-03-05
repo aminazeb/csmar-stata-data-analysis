@@ -1,11 +1,12 @@
 # Merged File Schema (merged_filtered.csv)
 
-This documents the key columns in `filtered/merged_filtered.csv`, focusing on appended/derived fields and the newly added FS/FN sources. Column names in the merged file are prefixed by source key plus the original column name (e.g., `fs_comscfd_C001000000`).
+This documents the key columns in `filtered/merged_filtered.csv`, focusing on appended/derived fields and the newly added FS/FN sources. Column names in the merged file are prefixed by source key plus the original column name (e.g., `fs_comscfd_C001000000`). The merged file is collapsed to one row per company-year; when a company has multiple rows in the same year, numeric columns are averaged and non-numeric columns take the first value.
 
 ## Core keys
 
 - `Symbol` – normalized company code (from `Stkcd`/`Symbol` across sources)
-- `Date` – statement date (from `Accper` or `EndDate` depending on source)
+- `Date` – year (derived from `Accper` or `EndDate` depending on source)
+- `serial_number` – serial number per unique `Symbol` (1..N) for counting companies; first column in merged file
 
 ## Analytics columns (added by apply_analytics.py)
 

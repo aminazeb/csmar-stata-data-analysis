@@ -28,7 +28,19 @@ def detect_date_col(df: pd.DataFrame) -> Optional[str]:
 
 
 def summarize_years(df: pd.DataFrame, date_col: str) -> Optional[Tuple[int, int, int]]:
-    dates = pd.to_datetime(df[date_col], errors="coerce")
+    series = df[date_col]
+
+    # First try to interpret as numeric year (to avoid 1970 default when storing year ints)
+    years_num = pd.to_numeric(series, errors="coerce")
+    mask_year = (years_num >= 1900) & (years_num <= 2100)
+    if mask_year.any() and mask_year.sum() >= 0.5 * mask_year.count():
+        years = years_num[mask_year].dropna().astype(int)
+        if years.empty:
+            return None
+        return years.min(), years.max(), years.nunique()
+
+    # Fallback to datetime parsing
+    dates = pd.to_datetime(series, errors="coerce")
     years = dates.dt.year.dropna().astype(int)
     if years.empty:
         return None
@@ -82,6 +94,7 @@ def build_report(data_dir: Path) -> str:
         "- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies (year-filtered when dated): FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only"
     )
     lines.append("- Parent-only by default; consolidated included when --allow-consolidated")
+    lines.append("- Merged file collapsed to one row per company-year (numeric columns averaged); Date is the year; serial_number is the first column (sequential per Symbol)")
     lines.append("")
 
     lines.append("Filtered source counts")
@@ -104,10 +117,15 @@ def build_report(data_dir: Path) -> str:
     if "Symbol" in merged_df.columns:
         lines.append(f"Unique companies (Symbol): {merged_df['Symbol'].nunique():,}")
     if "Date" in merged_df.columns:
-        dates = pd.to_datetime(merged_df["Date"], errors="coerce")
-        years = dates.dt.year.dropna().astype(int)
-        if not years.empty:
-            lines.append(f"Year span: {years.min()} - {years.max()} ({years.nunique()} unique years)")
+        years_numeric = pd.to_numeric(merged_df["Date"], errors="coerce")
+        mask_year = (years_numeric >= 1900) & (years_numeric <= 2100)
+        if mask_year.any() and mask_year.sum() >= 0.5 * mask_year.count():
+            yrs = years_numeric[mask_year].dropna().astype(int)
+        else:
+            dates = pd.to_datetime(merged_df["Date"], errors="coerce")
+            yrs = dates.dt.year.dropna().astype(int)
+        if not yrs.empty:
+            lines.append(f"Year span: {yrs.min()} - {yrs.max()} ({yrs.nunique()} unique years)")
     for state_col in ("mc_pro_StateTypeCode", "mc_degree_StateTypeCode", "StateTypeCode"):
         if state_col in merged_df.columns:
             counts = merged_df[state_col].astype(str).value_counts(dropna=True)

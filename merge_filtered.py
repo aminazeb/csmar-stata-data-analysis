@@ -24,6 +24,47 @@ def ensure_col(df: pd.DataFrame, col: str) -> pd.DataFrame:
     return df
 
 
+def resolve_date_col(df: pd.DataFrame, declared: Optional[str]) -> Optional[str]:
+    if declared and declared in df.columns:
+        return declared
+    for fallback in ("Accper", "Accper.1", "EndDate", "EndDate.1", "Enddate", "Reptdt"):
+        if fallback in df.columns:
+            return fallback
+    return None
+
+
+def coerce_numeric_columns(df: pd.DataFrame, group_cols: set) -> tuple[pd.DataFrame, Sequence[str]]:
+    numeric_cols = []
+    for col in df.columns:
+        if col in group_cols:
+            continue
+        coerced = pd.to_numeric(df[col], errors="coerce")
+        if coerced.notna().any():
+            df[col] = coerced
+            numeric_cols.append(col)
+    return df, numeric_cols
+
+
+def collapse_company_year(df: pd.DataFrame, company_col: str, date_col: str) -> pd.DataFrame:
+    """Collapse to one row per company-year using mean for numeric columns and first for others."""
+    temp = df.copy()
+    dates = pd.to_datetime(temp[date_col], errors="coerce")
+    temp = temp.loc[~dates.isna()].copy()
+    if temp.empty:
+        return temp
+    temp[company_col] = normalize_company_id(temp[company_col])
+    temp[date_col] = dates.dt.year.astype("Int64")
+
+    group_cols = {company_col, date_col}
+    temp, numeric_cols = coerce_numeric_columns(temp, group_cols)
+    agg: Dict[str, str] = {col: "mean" for col in numeric_cols}
+    other_cols = [c for c in temp.columns if c not in group_cols and c not in numeric_cols]
+    agg.update({col: "first" for col in other_cols})
+
+    collapsed = temp.groupby(list(group_cols), as_index=False).agg(agg)
+    return collapsed
+
+
 def build_spine(dfs: Sequence[pd.DataFrame], key_cols: Sequence[str]) -> pd.DataFrame:
     parts = []
     for df in dfs:
@@ -73,13 +114,6 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
     if not dfs:
         raise FileNotFoundError(f"No filtered files found in {source_dir}")
 
-    # Normalize company id
-    for key, df in dfs.items():
-        if "Stkcd" in df.columns:
-            df["Symbol"] = normalize_company_id(df["Stkcd"])
-        elif "Symbol" in df.columns:
-            df["Symbol"] = normalize_company_id(df["Symbol"])
-
     # Determine date columns per source (fallbacks if renamed)
     date_map: Dict[str, Optional[str]] = {
         "fs_combas": "Accper",
@@ -96,23 +130,32 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
         "ifs_emp": None,
     }
 
+    # Normalize company id and collapse to one row per company-year where a date is present
+    resolved_date_cols: Dict[str, Optional[str]] = {}
+    for key, df in dfs.items():
+        if "Stkcd" in df.columns:
+            df["Symbol"] = normalize_company_id(df["Stkcd"])
+        elif "Symbol" in df.columns:
+            df["Symbol"] = normalize_company_id(df["Symbol"])
+
+        declared_col = date_map.get(key)
+        date_col = resolve_date_col(df, declared_col)
+        resolved_date_cols[key] = date_col
+
+        if date_col:
+            dfs[key] = collapse_company_year(df, "Symbol", date_col)
+
     # Build spine from dated sources (skip industry-level employees which lack Symbol)
-    dated_keys = [k for k, col in date_map.items() if col and k in dfs and k != "ifs_emp"]
+    dated_keys = [k for k, col in resolved_date_cols.items() if col and k in dfs and k != "ifs_emp"]
     spine_sources = []
     for k in dated_keys:
-        declared_col = date_map[k]
+        date_col = resolved_date_cols[k]
         df = dfs[k]
-        actual_col = declared_col
-        if actual_col not in df.columns:
-            for fallback in ("Accper", "Accper.1", "EndDate", "EndDate.1"):
-                if fallback in df.columns:
-                    actual_col = fallback
-                    break
-        needed = ["Symbol", actual_col]
+        needed = ["Symbol", date_col]
         missing = [c for c in needed if c not in df.columns]
         if missing:
             raise KeyError(f"Missing required column(s) {missing} in {k}")
-        spine_sources.append(df[["Symbol", actual_col]].rename(columns={actual_col: "Date"}))
+        spine_sources.append(df[["Symbol", date_col]].rename(columns={date_col: "Date"}))
     spine = build_spine(spine_sources, ["Symbol", "Date"]) if spine_sources else pd.DataFrame(columns=["Symbol", "Date"])
 
     # Start merged with spine
@@ -123,13 +166,7 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
     for key, df in list(dfs.items()):
         if key == "ifs_emp":
             continue
-        declared_col = date_map.get(key)
-        date_col = declared_col
-        if declared_col and declared_col not in df.columns:
-            for fallback in ("Accper", "Accper.1", "EndDate", "EndDate.1"):
-                if fallback in df.columns:
-                    date_col = fallback
-                    break
+        date_col = resolved_date_cols.get(key)
         left_on = ["Symbol", "Date"] if date_col else ["Symbol"]
         right_on = ["Symbol", "Date"] if date_col else ["Symbol"]
         temp = df.copy()
@@ -155,6 +192,14 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
                 right_on=["SgnYear", "IndustryCode"],
             )
             merged = merged.drop(columns=[c for c in ["__Year", "SgnYear", "IndustryCode"] if c in merged.columns])
+
+    # Assign a unique serial per company to make counts explicit
+    unique_symbols = sorted(merged["Symbol"].dropna().unique())
+    company_id_map = {sym: idx + 1 for idx, sym in enumerate(unique_symbols)}
+    merged["serial_number"] = merged["Symbol"].map(company_id_map)
+    # Ensure serial_number is the first column
+    ordered_cols = ["serial_number"] + [c for c in merged.columns if c != "serial_number"]
+    merged = merged[ordered_cols]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_csv(output_path, index=False)
