@@ -47,6 +47,11 @@ def summarize_years(df: pd.DataFrame, date_col: str) -> Optional[Tuple[int, int,
     return years.min(), years.max(), years.nunique()
 
 
+def normalize_symbol(series: pd.Series) -> pd.Series:
+    out = series.astype(str).str.strip()
+    return out.replace({"nan": pd.NA}).str.replace(r"\.0$", "", regex=True)
+
+
 def summarize_filtered_sources(filtered_dir: Path) -> Dict[str, Dict[str, object]]:
     files = {
         "cg_co": filtered_dir / "CG_Co_filtered.xlsx",
@@ -61,14 +66,30 @@ def summarize_filtered_sources(filtered_dir: Path) -> Dict[str, Dict[str, object
         "bdt_fin": filtered_dir / "BDT_FinDistMertonDD_filtered.xlsx",
         "ofdi_finindex": filtered_dir / "OFDI_FININDEX_filtered.xlsx",
         "ifs_emp": filtered_dir / "IFS_IndRegMSELE_filtered.xlsx",
+        "ocscore": filtered_dir / "ocscore_filtered.xlsx",
+    }
+    friendly = {
+        "cg_co": "CG_Co (company metadata)",
+        "cg_ybasic": "CG_Ybasic (employees)",
+        "fs_combas": "FS_Combas (balance sheet)",
+        "fs_comins": "FS_Comins (income statement)",
+        "fs_comscfd": "FS_Comscfd (cash flow)",
+        "fs_comscfi": "FS_Comscfi (depreciation)",
+        "fn_fn046": "FN_FN046 (equity changes)",
+        "mc_degree": "MC_DiverOperationsDegree (diversification)",
+        "mc_pro": "MC_DiverOperationsPro (product operations)",
+        "bdt_fin": "BDT_FinDistMertonDD (market value/distress)",
+        "ofdi_finindex": "OFDI_FININDEX (Tobin Q style)",
+        "ifs_emp": "IFS_IndRegMSELE (industry employees)",
+        "ocscore": "ocscore (O-score inputs)",
     }
     summary: Dict[str, Dict[str, object]] = {}
     for key, path in files.items():
         if not path.exists():
-            summary[key] = {"exists": False}
+            summary[key] = {"exists": False, "label": friendly.get(key, key)}
             continue
         df = pd.read_excel(path) if path.suffix.lower() != ".csv" else pd.read_csv(path)
-        info: Dict[str, object] = {"exists": True, "rows": len(df)}
+        info: Dict[str, object] = {"exists": True, "rows": len(df), "label": friendly.get(key, key)}
         id_col = detect_id_col(df)
         if id_col:
             info["unique_ids"] = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True).nunique()
@@ -93,6 +114,7 @@ def build_report(data_dir: Path) -> str:
     lines.append(
         "- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies (year-filtered when dated): FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only"
     )
+    lines.append("- ocscore passthrough (no coverage/year filter); merged later in analytics on Symbol+Date with ocscore_* prefixes")
     lines.append("- Parent-only by default; consolidated included when --allow-consolidated")
     lines.append("- Merged file collapsed to one row per company-year (numeric columns averaged); Date is the year; serial_number is the first column (sequential per Symbol)")
     lines.append("")
@@ -101,21 +123,23 @@ def build_report(data_dir: Path) -> str:
     lines.append("----------------------")
     filtered_summary = summarize_filtered_sources(filtered_dir)
     for key, info in sorted(filtered_summary.items()):
+        label = info.get("label") or key
         if not info.get("exists"):
-            lines.append(f"- {key}: missing")
+            lines.append(f"- {label}: missing")
             continue
         row_txt = f"rows={info.get('rows', 'n/a')}"
         id_txt = f", unique_ids={info.get('unique_ids', 'n/a')}" if "unique_ids" in info else ""
         yr = info.get("year_span")
         yr_txt = f", years={yr[0]}-{yr[1]} ({yr[2]} uniq)" if yr else ""
-        lines.append(f"- {key}: {row_txt}{id_txt}{yr_txt}")
+        lines.append(f"- {label}: {row_txt}{id_txt}{yr_txt}")
     lines.append("")
 
     lines.append("Merged file summary")
     lines.append("-------------------")
     lines.append(f"Rows: {len(merged_df):,}")
     if "Symbol" in merged_df.columns:
-        lines.append(f"Unique companies (Symbol): {merged_df['Symbol'].nunique():,}")
+        norm_symbol = normalize_symbol(merged_df["Symbol"])
+        lines.append(f"Unique companies (Symbol): {norm_symbol.dropna().nunique():,} (from merged file)")
     if "Date" in merged_df.columns:
         years_numeric = pd.to_numeric(merged_df["Date"], errors="coerce")
         mask_year = (years_numeric >= 1900) & (years_numeric <= 2100)
@@ -126,11 +150,19 @@ def build_report(data_dir: Path) -> str:
             yrs = dates.dt.year.dropna().astype(int)
         if not yrs.empty:
             lines.append(f"Year span: {yrs.min()} - {yrs.max()} ({yrs.nunique()} unique years)")
+    oc_cols = [c for c in merged_df.columns if c.startswith("ocscore_")]
+    if oc_cols:
+        filled = merged_df.get("ocscore_OScore").notna().sum() if "ocscore_OScore" in merged_df.columns else None
+        fill_txt = f"; rows with O-score value: {filled:,}" if filled is not None else ""
+        lines.append(f"O-score columns present: {len(oc_cols)}{fill_txt}")
     for state_col in ("mc_pro_StateTypeCode", "mc_degree_StateTypeCode", "StateTypeCode"):
         if state_col in merged_df.columns:
             counts = merged_df[state_col].astype(str).value_counts(dropna=True)
             summary = ", ".join([f"{k}:{v}" for k, v in counts.items()])
-            lines.append(f"StateTypeCode counts ({state_col}): {summary}")
+            lines.append(
+                "Statement type from MC data (StateTypeCode: 1=Consolidated, 2=Parent); rows by code: "
+                + summary
+            )
             break
     return "\n".join(lines)
 

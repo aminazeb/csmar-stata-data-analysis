@@ -18,6 +18,8 @@ class DatasetConfig:
     filter_keep: Optional[Sequence[str]] = None
     participates_in_coverage: bool = True
     enforce_year_end: bool = True
+    header: int = 0
+    passthrough: bool = False
 
 
 DATASETS: List[DatasetConfig] = [
@@ -125,6 +127,17 @@ DATASETS: List[DatasetConfig] = [
         participates_in_coverage=False,
         enforce_year_end=False,
     ),
+    DatasetConfig(
+        key="ocscore",
+        stem="ocscore",
+        expected_exts=(".xlsx", ".xls"),
+        company_cols=("Symbol",),
+        date_cols=("Date",),
+        participates_in_coverage=False,
+        enforce_year_end=False,
+        header=1,
+        passthrough=True,
+    ),
 ]
 
 
@@ -156,14 +169,60 @@ def normalize_company_id(series: pd.Series) -> pd.Series:
     return out
 
 
-def read_dataset(path: Path) -> pd.DataFrame:
+def read_dataset(path: Path, header: int = 0) -> pd.DataFrame:
     if path.suffix.lower() in {".csv"}:
         try:
-            return pd.read_csv(path)
+            return pd.read_csv(path, header=header)
         except pd.errors.ParserError:
             # Retry with the python engine and skipping bad lines to handle irregular CSV rows.
-            return pd.read_csv(path, engine="python", on_bad_lines="skip")
-    return pd.read_excel(path)
+            return pd.read_csv(path, engine="python", on_bad_lines="skip", header=header)
+    return pd.read_excel(path, header=header)
+
+
+def clean_ocscore(df: pd.DataFrame) -> pd.DataFrame:
+    """Strip boilerplate columns and normalize naming for ocscore.xlsx."""
+
+    rename_map = {
+        "serial_number": "serial_number",
+        "Symbol": "Symbol",
+        "Date": "Date",
+        "TOTAL LIABILITY": "TotalLiabilities",
+        "TOTAL ASSETS": "TotalAssets",
+        "current assets": "CurrentAssets",
+        "fixed assets": "FixedAssets",
+        "current liability": "CurrentLiabilities",
+        "working capital": "WorkingCapital",
+        "x": "IndicatorX",
+        "y": "IndicatorY",
+        "net income": "NetIncome",
+        "net income( t-1)": "NetIncomePrev",
+        "FFO": "FundsFromOperations",
+        "SIZE": "Size",
+        "TLTA": "TLTA",
+        "WCTA": "WCTA",
+        "CLCA": "CLCA",
+        "NITA": "NITA",
+        "FUTL": "FUTL",
+        "INTWO": "INTWO",
+        "CHIN": "CHIN",
+        "CPIN": "CPIN",
+        "O-SCORE": "OScore",
+    }
+
+    keep_cols = [c for c in df.columns if not pd.isna(c) and not str(c).startswith("Unnamed")]
+    df = df.loc[:, keep_cols].copy()
+
+    normalized = {}
+    for col in df.columns:
+        key = str(col).strip()
+        normalized[col] = rename_map.get(key, key.replace(" ", "_"))
+    df = df.rename(columns=normalized)
+
+    if "Date" in df.columns:
+        df["Date"] = pd.to_numeric(df["Date"], errors="coerce")
+    if "Symbol" in df.columns:
+        df["Symbol"] = normalize_company_id(df["Symbol"])
+    return df
 
 
 def apply_row_filter(df: pd.DataFrame, cfg: DatasetConfig, include_consolidated: bool = False) -> pd.DataFrame:
@@ -256,7 +315,9 @@ def process(
         print(f"[clean] loading {cfg.stem}...", flush=True)
         path = find_input_file(cfg, data_dir)
         t0 = time.perf_counter()
-        df = read_dataset(path)
+        df = read_dataset(path, header=cfg.header)
+        if cfg.key == "ocscore":
+            df = clean_ocscore(df)
         print(
             f"[clean] loaded {cfg.stem}: rows={len(df)}, cols={df.shape[1]}, "
             f"elapsed={time.perf_counter() - t0:.1f}s",
@@ -311,7 +372,9 @@ def process(
         )
 
     for cfg_key, (cfg, path, df, company_col, year_col) in loaded.items():
-        if cfg.participates_in_coverage:
+        if cfg.passthrough:
+            filtered = df.reset_index(drop=True)
+        elif cfg.participates_in_coverage:
             filtered = filter_for_companies_and_years(df, company_col, year_col, common_companies, target_years)
         elif cfg.key == "ifs_emp":
             # Industry-level file: filter by years only

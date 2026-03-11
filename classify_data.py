@@ -93,7 +93,7 @@ def load_merged(data_dir: Path) -> pd.DataFrame:
 def add_statement_and_filter(df: pd.DataFrame, state_col: str, statement_type: str) -> pd.DataFrame:
     code = {"parent": "2", "consolidated": "1"}[statement_type]
     codes = normalize_code(df[state_col])
-    out = df[codes == code].copy()
+    out = df[codes == code].copy()  # Preserve all merged columns
     out["StatementType"] = "Parent" if statement_type == "parent" else "Consolidated"
     return out
 
@@ -116,40 +116,24 @@ def build_product_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int]
     if date_col is None:
         raise KeyError("No date column (Date/EndDate/Accper) found in merged file")
 
-    base = pd.DataFrame()
-    base["Symbol"] = df["Symbol"]
-    base["EndDate"] = df[date_col]
-    field_map = {
-        "ProductName_EN": "mc_pro_ProductName_EN",
-        "Currency": "mc_pro_Currency",
-        "SaleRevenue": "mc_pro_SaleRevenue",
-        "SaleRevenueRatio": "mc_pro_SaleRevenueRatio",
-        "OperatingCost": "mc_pro_OperatingCost",
-        "OperatingCostRatio": "mc_pro_OperatingCostRatio",
-        "OperatingProfit": "mc_pro_OperatingProfit",
-        "OperatingProfitRatio": "mc_pro_OperatingProfitRatio",
-        "OperatingMarginRatio": "mc_pro_OperatingMarginRatio",
-        "SaleRevenueGrowth": "mc_pro_SaleRevenueGrowth",
-        "OperatingCostGrowth": "mc_pro_OperatingCostGrowth",
-        "OperatingProfitGrowth": "mc_pro_OperatingProfitGrowth",
-        "OperatingMarginGrowth": "mc_pro_OperatingMarginGrowth",
-    }
-    for out_col, src_col in field_map.items():
-        base[out_col] = df[src_col] if src_col in df.columns else None
-
-    for k, v in meta.items():
-        base[k] = v
-
     state_col = pick_first(df, ["mc_pro_StateTypeCode", "StateTypeCode"])
     if state_col is None:
         raise KeyError("StateTypeCode column not found for product data")
-    base["StateTypeCode"] = normalize_code(df[state_col])
+
+    working = df.copy()
+    if "EndDate" not in working.columns:
+        working["EndDate"] = working[date_col]
+
+    working["StateTypeCode"] = normalize_code(working[state_col])
+    for k, v in meta.items():
+        working[k] = v
+
+    working = ensure_cols(working, PRODUCT_COLUMNS)
 
     counts = {}
     for st_type, fname in (("parent", "parent_product.csv"), ("consolidated", "consolidated_product.csv")):
-        subset = add_statement_and_filter(base, "StateTypeCode", st_type)
+        subset = add_statement_and_filter(working, "StateTypeCode", st_type)
         subset = ensure_cols(subset, PRODUCT_COLUMNS)
-        subset = subset.loc[:, PRODUCT_COLUMNS]
         out_path = output_dir / fname
         out_path.parent.mkdir(parents=True, exist_ok=True)
         subset.to_csv(out_path, index=False)
@@ -167,50 +151,26 @@ def build_div_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int, int
     if state_col is None or class_col is None:
         raise KeyError("Missing StateTypeCode or ClassificationStandard for diversification data")
 
-    base = pd.DataFrame()
-    base["Symbol"] = df["Symbol"]
-    base["EndDate"] = df[date_col]
+    working = df.copy()
+    if "EndDate" not in working.columns:
+        working["EndDate"] = working[date_col]
 
-    # Bring product-level fields if present (some degree files may not have them; defaults to None)
-    product_fields = {
-        "ProductName_EN": pick_first(df, ["mc_degree_ProductName_EN", "mc_pro_ProductName_EN"]),
-        "Currency": pick_first(df, ["mc_degree_Currency", "mc_pro_Currency"]),
-        "SaleRevenue": pick_first(df, ["mc_degree_SaleRevenue", "mc_pro_SaleRevenue"]),
-        "SaleRevenueRatio": pick_first(df, ["mc_degree_SaleRevenueRatio", "mc_pro_SaleRevenueRatio"]),
-        "OperatingCost": pick_first(df, ["mc_degree_OperatingCost", "mc_pro_OperatingCost"]),
-        "OperatingCostRatio": pick_first(df, ["mc_degree_OperatingCostRatio", "mc_pro_OperatingCostRatio"]),
-        "OperatingProfit": pick_first(df, ["mc_degree_OperatingProfit", "mc_pro_OperatingProfit"]),
-        "OperatingProfitRatio": pick_first(df, ["mc_degree_OperatingProfitRatio", "mc_pro_OperatingProfitRatio"]),
-        "OperatingMarginRatio": pick_first(df, ["mc_degree_OperatingMarginRatio", "mc_pro_OperatingMarginRatio"]),
-        "SaleRevenueGrowth": pick_first(df, ["mc_degree_SaleRevenueGrowth", "mc_pro_SaleRevenueGrowth"]),
-        "OperatingCostGrowth": pick_first(df, ["mc_degree_OperatingCostGrowth", "mc_pro_OperatingCostGrowth"]),
-        "OperatingProfitGrowth": pick_first(df, ["mc_degree_OperatingProfitGrowth", "mc_pro_OperatingProfitGrowth"]),
-        "OperatingMarginGrowth": pick_first(df, ["mc_degree_OperatingMarginGrowth", "mc_pro_OperatingMarginGrowth"]),
-    }
-    for out_col, src_col in product_fields.items():
-        base[out_col] = df[src_col] if src_col else None
-
-    base["IsDiversifiedOperations"] = df.get(pick_first(df, ["mc_degree_IsDiversifiedOperations"]))
-    base["MainBusinessInvolvedF"] = df.get(pick_first(df, ["mc_degree_MainBusinessInvolvedF"]))
-    base["MainBusinessInvolvedS"] = df.get(pick_first(df, ["mc_degree_MainBusinessInvolvedS"]))
-    base["IncomeHHI"] = df.get(pick_first(df, ["mc_degree_IncomeHHI"]))
-    base["IncomeEntropyIndex"] = df.get(pick_first(df, ["mc_degree_IncomeEntropyIndex"]))
-    base["ClassificationStandard"] = normalize_code(df[class_col])
-    base["StateTypeCode"] = normalize_code(df[state_col])
-
+    working["ClassificationStandard"] = normalize_code(working[class_col])
+    working["StateTypeCode"] = normalize_code(working[state_col])
     for k, v in meta.items():
-        base[k] = v
+        working[k] = v
+
+    working = ensure_cols(working, DIV_COLUMNS)
 
     counts = {}
     for class_value, tag in (("2", "sales"), ("3", "product")):
-        class_df = base[base["ClassificationStandard"] == class_value].copy()
+        class_df = working[working["ClassificationStandard"] == class_value].copy()
         for st_type, fname in (
             ("parent", f"parent_{tag}_diversification.csv"),
             ("consolidated", f"consolidated_{tag}_diversification.csv"),
         ):
             subset = add_statement_and_filter(class_df, "StateTypeCode", st_type)
             subset = ensure_cols(subset, DIV_COLUMNS)
-            subset = subset.loc[:, DIV_COLUMNS]
             out_path = output_dir / fname
             out_path.parent.mkdir(parents=True, exist_ok=True)
             subset.to_csv(out_path, index=False)

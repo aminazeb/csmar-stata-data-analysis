@@ -16,6 +16,7 @@ This project filters multiple datasets to keep companies present across them wit
 - BDT_FinDistMertonDD.(xlsx|xls)
 - OFDI_FININDEX.(xlsx|xls)
 - IFS_IndRegMSELE.(xlsx|xls) — industry-level employees (joins by industry code + year; excluded from coverage intersection)
+- ocscore.(xlsx|xls|csv) — O-score inputs; passthrough (no filtering), merged later in analytics
 
 ## What clean_data.py does
 
@@ -27,7 +28,7 @@ This project filters multiple datasets to keep companies present across them wit
 4. Normalize company IDs (strip, drop trailing `.0`).
 5. For coverage-participating dated files, keep companies that appear in at least `min_years` of the target years (default now 3). Coverage calculation uses only CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, and BDT_FinDistMertonDD.
 6. Intersect companies across those coverage-participating datasets. Firm-level files excluded from the coverage calculation (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to that common company set and filtered by target years when dated; IFS_IndRegMSELE is excluded from coverage and filtered by target years only.
-7. Write filtered outputs to `filtered/` under the data dir.
+7. Write filtered outputs to `filtered/` under the data dir. ocscore is passthrough (not filtered or trimmed).
 
 ## Run commands
 
@@ -48,7 +49,7 @@ Recommended sequence (clean → merge → metrics → summary; add classify if n
 # 2) Merge filtered files into one wide file, collapsing to one row per company-year and adding serial_number (first column)
 /Users/air/Documents/statadata/.venv/bin/python merge_filtered.py --data-dir /Users/air/Documents/statadata/data
 
-# 3) Compute Altman Z + derived metrics and append to merged
+# 3) Attach ocscore (Symbol+Date), compute Altman Z + derived metrics, and append value + *_formula columns into merged
 /Users/air/Documents/statadata/.venv/bin/python apply_analytics.py --data-dir /Users/air/Documents/statadata/data
 
 # 4) (Optional) Classify from the merged file into product and diversification outputs
@@ -62,8 +63,8 @@ What each step produces:
 
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31) where applicable, year coverage, and parent-only by default; `--allow-consolidated` keeps consolidated too. IFS is filtered only by target years.
 - Step 2 (merge_filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, collapsing to one row per company-year (averaging numeric duplicates, first non-numeric), normalizing `Date` to the year integer, and adding a sequential `serial_number` per `Symbol` as the first column; CG_Ybasic fields are prefixed `cg_ybasic_`, BDT `bdt_fin_*`, OFDI `ofdi_finindex_*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
-- Step 3 (apply_analytics.py): appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, SalesGrowth into merged_filtered.csv. Add `--output PATH` only if you also want a standalone metrics CSV.
-- Step 4 (classify_data.py, optional): classified outputs in `<data-dir>/filtered/classified`:
+- Step 3 (apply_analytics.py): left-joins ocscore on Symbol+Date (prefixed `ocscore_*`), then appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, SalesGrowth into merged_filtered.csv, plus matching *_formula columns (Excel-ready strings). `ocscore_*` columns are refreshed on each run (existing ones dropped before merge). Add `--output PATH` only if you also want a standalone metrics CSV.
+- Step 4 (classify_data.py, optional): classified outputs in `<data-dir>/filtered/classified`, preserving all merged columns (including analytics, *_formula, and ocscore):
   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
 
@@ -74,6 +75,7 @@ Options (clean_data.py):
 - `--years Y1 Y2 ...` : target years (default: 2018 2019 2020 2021 2022 2023 2024).
 - `--min-years N` : minimum count of target years required per company per dated file (default: 3). Coverage uses CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX are excluded from coverage calc but still trimmed to the common companies (year-filtered when dated); IFS_IndRegMSELE is excluded and filtered by target years only.
 - `--allow-consolidated` : also keep consolidated statements (MC StateTypeCode=1, FS/FN Typrep=A). Default keeps parent only.
+- ocscore is passthrough (not filtered by coverage/years); it is merged later in apply_analytics.
 - `--debug` : print coverage stats per dataset and intersection size.
 
 Options (merge_filtered.py):
@@ -120,6 +122,7 @@ Each classified file includes:
 - Year filtering uses the first date column per file (Accper for FS*\*, EndDate for MC*\*). The merged file stores `Date` as the year after collapsing company-year duplicates.
 - Company join: FS*\* `Stkcd` matches MC*\* `Symbol`; CG_Co uses `Stkcd` for presence only.
 - Classification uses the same ID normalization, filters Dec 31 rows, and splits by StateTypeCode (2 parent, 1 consolidated). Company metadata (ShortName_EN, IndustryCodeC) is joined when available.
-- Altman/metrics operate on the year-level `Date` produced by the merged file (derived from Dec 31 rows in clean_data); outputs are appended to merged (a separate CSV is only written if `--output` is provided).
+- Altman/metrics operate on the year-level `Date` produced by the merged file (derived from Dec 31 rows in clean_data); outputs are appended to merged along with *_formula columns so spreadsheets can recalc (a separate CSV is only written if `--output` is provided).
 - CSVs with bad rows are retried with python engine and `on_bad_lines="skip"`.
 - Only Dec 31 rows are kept for dated files; change `filter_year_end` if your fiscal year-end differs.
+- ocscore stays unfiltered in cleaning, is merged in analytics on Symbol+Date with `ocscore_*` prefixes, and carries through into both merged and classified outputs.

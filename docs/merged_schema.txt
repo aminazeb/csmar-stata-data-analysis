@@ -21,6 +21,17 @@ This documents the key columns in `filtered/merged_filtered.csv`, focusing on ap
 - `ROA` – Net Profit / Total Assets
 - `FixedAssetsRatio` – Fixed Assets / Total Assets
 - `SalesGrowth` – YoY pct change of Operating Revenue per `Symbol`
+- For each value column above (except SalesGrowth), a matching `*_formula` column contains an Excel-ready formula string so spreadsheets can recalc; e.g., `AltmanZScore_formula`, `X1_WorkingCapitalToTotalAssets_formula`, `FirmSize_LogTotalAssets_formula`, `Leverage_formula`, `ROA_formula`, `FixedAssetsRatio_formula`.
+
+## Ocscore columns (prefixed `ocscore_*`, merged on Symbol+Date)
+
+- `ocscore_TotalAssets`, `ocscore_TotalLiabilities`, `ocscore_CurrentAssets`, `ocscore_CurrentLiabilities`, `ocscore_WorkingCapital`, `ocscore_FixedAssets`, `ocscore_GNP_LogTotalAssets` – balance sheet inputs and log size from ocscore source
+- `ocscore_IndicatorX`, `ocscore_IndicatorY` – auxiliary ocscore indicators (as provided)
+- `ocscore_NetIncome`, `ocscore_NetIncomePrev`, `ocscore_FundsFromOperations` – earnings and cash flow inputs
+- `ocscore_Size`, `ocscore_TLTA`, `ocscore_WCTA`, `ocscore_CLCA`, `ocscore_NITA`, `ocscore_FUTL`, `ocscore_INTWO`, `ocscore_CHIN`, `ocscore_CPIN` – precomputed ratios/flags from ocscore
+- `ocscore_OScore` – O-score value
+- `ocscore_serial_number` – serial number from ocscore source (kept for reference)
+- `ocscore_OScore_formula` – Excel-ready O-score formula built from the ocscore ratio columns; values remain in `ocscore_OScore`
 
 ## New source blocks
 
