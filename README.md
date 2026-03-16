@@ -29,7 +29,7 @@ This project filters multiple datasets to keep companies present across them wit
 3. Keep only year-end rows (Dec 31) for dated firm-level files; industry-level IFS data keeps all years (only filtered by target years).
 4. Normalize company IDs (strip, drop trailing `.0`).
 5. For coverage-participating dated files, keep companies that appear in at least `min_years` of the target years (default 3). Coverage calculation uses only CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, and BDT_FinDistMertonDD.
-6. Intersect companies across those coverage-participating datasets. Firm-level files excluded from the coverage calculation (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to that common company set and filtered by target years when dated; IFS_IndRegMSELE is excluded from coverage and filtered by target years only.
+6. Intersect companies across those coverage-participating datasets. Firm-level files excluded from the coverage calculation (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to that common company set, filtered by target years when dated, and must also meet `--min-years`; IFS_IndRegMSELE is excluded from coverage and filtered by target years only.
 7. Write filtered outputs to `filtered/` under the data dir. ocscore is passthrough (not filtered or trimmed).
 
 ## Run commands
@@ -64,8 +64,8 @@ Recommended sequence (clean → merge → metrics → summary; add classify if n
 What each step produces:
 
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31) where applicable, year coverage, and parent-only by default; `--allow-consolidated` keeps consolidated too. IFS is filtered only by target years.
-- Step 2 (merge*filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, collapsing to one row per company-year (averaging numeric duplicates, first non-numeric), normalizing `Date` to the year integer, and adding a sequential `serial_number` per `Symbol` as the first column; CG_Ybasic fields are prefixed `cg_ybasic*`, BDT `bdt*fin*`, OFDI `ofdi*finindex*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
-- Step 3 (apply*analytics.py): left-joins ocscore on Symbol+Date (prefixed `ocscore*\*`), then appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, SalesGrowth into merged_filtered.csv, plus matching *_formula columns (Excel-ready strings). `ocscore\_\*`columns are refreshed on each run (existing ones dropped before merge). Add`--output PATH` only if you also want a standalone metrics CSV.
+- Step 2 (merge*filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, collapsing to one row per company-year (averaging numeric duplicates, first non-numeric), normalizing `Date` to the year integer, and adding a sequential `serial_number` per `Symbol` as the first column; all non-key source columns are retained with source prefixes (the script fails fast if any expected prefixed source column is missing); CG_Ybasic fields are prefixed `cg_ybasic*`, BDT `bdt*fin*`, OFDI `ofdi*finindex*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
+- Step 3 (apply*analytics.py): left-joins ocscore on Symbol+Date (prefixed `ocscore*\*`), then appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, ROI, SalesGrowth into merged_filtered.csv, plus matching *_formula columns (Excel-ready strings). ROI uses `fs_comins_B002000000 / fs_combas_A001212000`. `ocscore\_\*`columns are refreshed on each run (existing ones dropped before merge). Add`--output PATH` only if you also want a standalone metrics CSV.
 - Step 4 (classify_data.py, optional): classified outputs in `<data-dir>/filtered/classified`, preserving all merged columns (including analytics, \*\_formula, and ocscore):
   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
@@ -76,7 +76,7 @@ Options (clean_data.py):
 - `--data-dir DIR` : folder containing the source files (default: cwd).
 - `--output-dir DIR` : where to write filtered outputs (default: <data-dir>/filtered).
 - `--years Y1 Y2 ...` : target years (default: 2018 2019 2020 2021 2022 2023 2024).
-- `--min-years N` : minimum count of target years required per company per dated file (default: 3). Coverage uses CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, BDT_FinDistMertonDD; FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX are excluded from coverage calc but still trimmed to the common companies (year-filtered when dated); IFS_IndRegMSELE is excluded and filtered by target years only.
+- `--min-years N` : minimum count of target years required per company per dated file (default: 3). Coverage intersection uses CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\*, BDT_FinDistMertonDD. Dated firm-level files excluded from coverage calc (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to the common companies and must also meet `--min-years`; IFS_IndRegMSELE is excluded and filtered by target years only.
 - `--allow-consolidated` : also keep consolidated statements (MC StateTypeCode=1, FS Typrep=A). Default keeps parent only.
 - ocscore is passthrough (not filtered by coverage/years); it is merged later in apply_analytics.
 - `--debug` : print coverage stats per dataset and intersection size.

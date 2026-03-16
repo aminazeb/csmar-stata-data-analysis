@@ -1,7 +1,7 @@
 Filters applied
 ---------------
 - Year-end filter: applied to all dated firm-level datasets except IFS_IndRegMSELE
-- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies (year-filtered when dated): FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only
+- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies, year-filtered when dated, and required to meet min-years: FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only
 - ocscore passthrough (no coverage/year filter); merged later in analytics on Symbol+Date with ocscore_* prefixes
 - Parent-only by default; consolidated included when --allow-consolidated
 - Merged file collapsed to one row per company-year (numeric columns averaged); Date is the year; serial_number is the first column (sequential per Symbol)
@@ -15,7 +15,7 @@ Filtered source counts
 - FS_Combas (balance sheet): rows=6946, unique_ids=1063, years=2018-2024 (7 uniq)
 - FS_Comins (income statement): rows=6946, unique_ids=1063, years=2018-2024 (7 uniq)
 - FS_Comscfd (cash flow): rows=6946, unique_ids=1063, years=2018-2024 (7 uniq)
-- FS_Comscfi (depreciation): rows=75, unique_ids=27, years=2018-2024 (7 uniq)
+- FS_Comscfi (depreciation): rows=58, unique_ids=12, years=2018-2024 (7 uniq)
 - IFS_IndRegMSELE (industry employees): rows=1116
 - MC_DiverOperationsDegree (diversification): rows=9005, unique_ids=1063, years=2018-2024 (7 uniq)
 - MC_DiverOperationsPro (product operations): rows=19031, unique_ids=1063, years=2018-2024 (7 uniq)

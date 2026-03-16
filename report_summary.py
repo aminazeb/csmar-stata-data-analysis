@@ -112,7 +112,7 @@ def build_report(data_dir: Path) -> str:
     lines.append("---------------")
     lines.append("- Year-end filter: applied to all dated firm-level datasets except IFS_IndRegMSELE")
     lines.append(
-        "- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies (year-filtered when dated): FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only"
+        "- Coverage intersection: min-years=3 using CG_Co, CG_Ybasic, FS_Combas, FS_Comins, MC_*, BDT_FinDistMertonDD; excluded from coverage calc but still trimmed to the common companies, year-filtered when dated, and required to meet min-years: FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX; IFS_IndRegMSELE excluded and filtered by years only"
     )
     lines.append("- ocscore passthrough (no coverage/year filter); merged later in analytics on Symbol+Date with ocscore_* prefixes")
     lines.append("- Parent-only by default; consolidated included when --allow-consolidated")

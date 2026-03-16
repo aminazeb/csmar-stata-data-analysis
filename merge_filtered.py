@@ -73,6 +73,23 @@ def build_spine(dfs: Sequence[pd.DataFrame], key_cols: Sequence[str]) -> pd.Data
     return pd.concat(parts, ignore_index=True).drop_duplicates()
 
 
+def assert_source_columns_retained(
+    merged: pd.DataFrame,
+    source_key: str,
+    source_df: pd.DataFrame,
+    key_cols: set,
+) -> None:
+    """Fail fast if any non-key source columns were not carried into the merged frame."""
+
+    # source_df is already renamed before this check, so compare directly.
+    expected = {c for c in source_df.columns if c not in key_cols}
+    missing = sorted(expected - set(merged.columns))
+    if missing:
+        raise RuntimeError(
+            f"Merged output is missing {len(missing)} column(s) from {source_key}: {missing}"
+        )
+
+
 def merge_filtered(data_dir: Path, output_path: Path) -> None:
     # Prefer a filtered subfolder if present
     filtered_dir = data_dir / "filtered"
@@ -177,6 +194,7 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
         rename_cols = {c: f"{key}_{c}" for c in temp.columns if c not in key_cols}
         temp = temp.rename(columns=rename_cols)
         merged = merged.merge(temp, how="left", left_on=left_on, right_on=right_on)
+        assert_source_columns_retained(merged, key, temp, key_cols)
 
     # Optionally enrich with industry-level employees using industry code and year
     if "ifs_emp" in dfs:

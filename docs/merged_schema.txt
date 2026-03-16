@@ -20,8 +20,9 @@ This documents the key columns in `filtered/merged_filtered.csv`, focusing on ap
 - `Leverage` – Total Liabilities / Total Assets
 - `ROA` – Net Profit / Total Assets
 - `FixedAssetsRatio` – Fixed Assets / Total Assets
+- `ROI` – `fs_comins_B002000000` / `fs_combas_A001212000` (net profit over net fixed assets)
 - `SalesGrowth` – YoY pct change of Operating Revenue per `Symbol`
-- For each value column above (except SalesGrowth), a matching `*_formula` column contains an Excel-ready formula string so spreadsheets can recalc; e.g., `AltmanZScore_formula`, `X1_WorkingCapitalToTotalAssets_formula`, `FirmSize_LogTotalAssets_formula`, `Leverage_formula`, `ROA_formula`, `FixedAssetsRatio_formula`.
+- For each value column above (except SalesGrowth), a matching `*_formula` column contains an Excel-ready formula string so spreadsheets can recalc; e.g., `AltmanZScore_formula`, `X1_WorkingCapitalToTotalAssets_formula`, `FirmSize_LogTotalAssets_formula`, `Leverage_formula`, `ROA_formula`, `FixedAssetsRatio_formula`, `ROI_formula`.
 
 ## Ocscore columns (prefixed `ocscore_*`, merged on Symbol+Date)
 
@@ -32,6 +33,10 @@ This documents the key columns in `filtered/merged_filtered.csv`, focusing on ap
 - `ocscore_OScore` – O-score value
 - `ocscore_serial_number` – serial number from ocscore source (kept for reference)
 - `ocscore_OScore_formula` – Excel-ready O-score formula built from the ocscore ratio columns; values remain in `ocscore_OScore`
+
+## Common raw fields (quick lookup)
+
+- `fs_comins_B001216000` – R&D Expenses (research and development costs)
 
 ## New source blocks
 
@@ -79,20 +84,20 @@ Each block lists the merged prefix and key columns from the newly added datasets
 - `cg_co_` (CG_Co metadata): `Stkcd` stock code, `ShortName_EN` name, `Nnindcd`/`IndustryCodeC` industry codes, `Stktype`, `ListedDate`.
 - `cg_ybasic_` (firm employees): `Reptdt` date, `Stkcd`, employee counts by firm.
 - `fs_combas_` (balance sheet): `Accper` date, `Typrep` statement type (A consolidated, B parent), `A001000000` total assets, `A001100000` current assets, `A002000000` total liabilities, `A002100000` current liabilities, `A001212000` fixed assets.
-- `fs_comins_` (income statement): `Accper`, `Typrep`, `B001101000` operating revenue, `B001000000` net profit, `B001300000` operating profit/EBIT, `B002000000` retained earnings.
+- `fs_comins_` (income statement): `Accper`, `Typrep`, `B001101000` operating revenue, `B001000000` total profit, `B001300000` operating profit/EBIT, `B002000000` net profit, `B001216000` research and development expenses (R&D costs).
 - `fs_comscfd_` (cash flow): `Accper`, `Typrep`, `C001000000` net cash from operating activities, `C003002000` proceeds from borrowings, `C0d1011000` net increase in repurchase business capital.
 - `fs_comscfi_` (depreciation): `Accper`, `Typrep`, `D000103000` depreciation of fixed/oil/bio assets, `D000119000` depreciation/amortization of investment property, `D000120000` depreciation/amortization of use-right assets.
 - `fn_fn046_` (equity changes): `Accper`, `Typrep` (A/B/C/D current/prior consolidated/parent), `SubjectCode`/`SubjectName_en`, balances (`Fn04601` prior end, `Fn04605` current begin, `Fn04607` net profit, `Fn04627` profit distribution, `Fn04633` interior carry-over, `Fn04638` other carry-over, `Fn04643` ending balance).
 - `mc_pro_` (product operations): `EndDate`, `StateTypeCode` (1 consolidated, 2 parent), product names, revenue/cost/profit, ratios, growth metrics.
 - `mc_degree_` (diversification): `EndDate`, `StateTypeCode`, `ClassificationStandard` (2 sales, 3 product), diversification flags/HHI/entropy and optional product-level fields.
 - `bdt_fin_` (BDT_FinDistMertonDD): `Enddate`, market value, distress/valuation metrics.
-- `ofdi_finindex_` (OFDI_FININDEX): `EndDate`, financial index/Tobin-Q style metrics.
+- `ofdi_finindex_` (OFDI_FININDEX): `EndDate`, `TobinQA` (Tobin's Q - A, market value A / total assets), and other financial index/Tobin-Q style metrics.
 - `ifs_` (IFS_IndRegMSELE): `SgnYear` year, `IndustryCode`, industry-level employee counts (`ifs_EmployeeNum`, `ifs_LegalEntityNum`).
 
 Notes on filters
 
 - Year-end filter applies to dated firm-level datasets; IFS_IndRegMSELE uses `SgnYear` only (no Dec 31 filter).
-- Coverage intersection (min-years=3) uses only CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\* and BDT_FinDistMertonDD. Firm-level datasets excluded from coverage (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to the common company set (and target years when dated); IFS_IndRegMSELE is excluded and filtered by years only.
+- Coverage intersection (min-years=3) uses only CG*Co, CG_Ybasic, FS_Combas, FS_Comins, MC*\* and BDT_FinDistMertonDD. Firm-level datasets excluded from coverage (FS_Comscfd, FS_Comscfi, FN_FN046, OFDI_FININDEX) are still trimmed to the common company set, filtered by target years when dated, and required to meet min-years; IFS_IndRegMSELE is excluded and filtered by years only.
 
 Notes:
 

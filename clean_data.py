@@ -292,6 +292,28 @@ def filter_for_companies_and_years(
     return out.loc[mask].reset_index(drop=True)
 
 
+def enforce_min_years_threshold(
+    df: pd.DataFrame,
+    company_col: str,
+    year_col: Optional[str],
+    target_years: Set[int],
+    min_years: int,
+) -> pd.DataFrame:
+    """Keep only companies with at least min_years represented in target_years."""
+    if year_col is None:
+        return df.reset_index(drop=True)
+
+    out = df.copy()
+    out[company_col] = normalize_company_id(out[company_col])
+    out["__year"] = normalize_year(out, year_col)
+    out = out[out["__year"].isin(target_years)]
+
+    counts = out.groupby(company_col)["__year"].nunique()
+    keep_companies = set(counts[counts >= min_years].index)
+    out = out[out[company_col].isin(keep_companies)].drop(columns=["__year"])
+    return out.reset_index(drop=True)
+
+
 def save_dataset(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix.lower() == ".csv":
@@ -387,6 +409,13 @@ def process(
         else:
             # Excluded from coverage computation but still aligned to the common companies and target years
             filtered = filter_for_companies_and_years(df, company_col, year_col, common_companies, target_years)
+            filtered = enforce_min_years_threshold(
+                filtered,
+                company_col=company_col,
+                year_col=year_col,
+                target_years=target_years,
+                min_years=min_years,
+            )
         output_path = output_dir / f"{path.stem}_filtered{path.suffix}"
         save_dataset(filtered, output_path)
         print(f"Saved filtered {cfg_key} -> {output_path} (rows={len(filtered)})")

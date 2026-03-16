@@ -18,6 +18,7 @@ REQUIRED_COLUMNS = {
     "market_value": "bdt_fin_MarketValueOfCompany1",  # Market Value from BDT_FinDistMertonDD
     "net_profit": "fs_comins_B001000000",         # Net profit for ROA
     "fixed_assets": "fs_combas_A001212000",       # Tangible fixed assets
+    "roi_numerator": "fs_comins_B002000000",      # Net Profit (B002000000) for ROI numerator
 }
 
 
@@ -114,6 +115,7 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     mv = df[REQUIRED_COLUMNS["market_value"]]
     net_profit = df[REQUIRED_COLUMNS["net_profit"]]
     fixed_assets = df[REQUIRED_COLUMNS["fixed_assets"]]
+    roi_numerator = df[REQUIRED_COLUMNS["roi_numerator"]]
 
     x1 = safe_div(ca - cl, ta)
     x2 = safe_div(re, ta)
@@ -137,6 +139,7 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     out["Leverage"] = safe_div(tl, ta)
     out["ROA"] = safe_div(net_profit, ta)
     out["FixedAssetsRatio"] = safe_div(fixed_assets, ta)
+    out["ROI"] = safe_div(roi_numerator, fixed_assets)
 
     growth_frame = pd.DataFrame({"Symbol": df.get("Symbol"), "Date": df.get("Date"), "sales": sales})
     growth_frame = growth_frame.sort_values(["Symbol", "Date"])
@@ -175,6 +178,8 @@ def add_inline_formula_columns(df: pd.DataFrame) -> pd.DataFrame:
         REQUIRED_COLUMNS["operating_revenue"],
         REQUIRED_COLUMNS["market_value"],
         REQUIRED_COLUMNS["total_liabilities"],
+        REQUIRED_COLUMNS["roi_numerator"],
+        REQUIRED_COLUMNS["fixed_assets"],
     ):
         ca = col_letter[REQUIRED_COLUMNS["current_assets"]]
         cl = col_letter[REQUIRED_COLUMNS["current_liabilities"]]
@@ -184,6 +189,8 @@ def add_inline_formula_columns(df: pd.DataFrame) -> pd.DataFrame:
         sales = col_letter[REQUIRED_COLUMNS["operating_revenue"]]
         mv = col_letter[REQUIRED_COLUMNS["market_value"]]
         tl = col_letter[REQUIRED_COLUMNS["total_liabilities"]]
+        roi_num = col_letter[REQUIRED_COLUMNS["roi_numerator"]]
+        fa = col_letter[REQUIRED_COLUMNS["fixed_assets"]]
 
         add_col("X1_WorkingCapitalToTotalAssets_formula", lambda r: f"=IFERROR(({ca}{r}-{cl}{r})/{ta}{r},\"\")")
         add_col("X2_RetainedEarningsToTotalAssets_formula", lambda r: f"=IFERROR({re}{r}/{ta}{r},\"\")")
@@ -206,6 +213,7 @@ def add_inline_formula_columns(df: pd.DataFrame) -> pd.DataFrame:
         add_col("Leverage_formula", lambda r: f"=IFERROR({tl}{r}/{ta}{r},\"\")")
         add_col("ROA_formula", lambda r: f"=IFERROR({col_letter[REQUIRED_COLUMNS['net_profit']]}{r}/{ta}{r},\"\")")
         add_col("FixedAssetsRatio_formula", lambda r: f"=IFERROR({col_letter[REQUIRED_COLUMNS['fixed_assets']]}{r}/{ta}{r},\"\")")
+        add_col("ROI_formula", lambda r: f"=IFERROR({roi_num}{r}/{fa}{r},\"\")")
 
     # Ocscore formula (keeps source values; adds a formula column)
     oc_cols = {
