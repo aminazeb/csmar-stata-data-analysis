@@ -64,6 +64,28 @@ DIV_COLUMNS: Sequence[str] = (
 )
 
 
+OUTPUT_SOURCE_CANDIDATES = {
+    "ProductName_EN": ["mc_pro_ProductName_EN", "ProductName_EN"],
+    "Currency": ["mc_pro_Currency", "Currency"],
+    "SaleRevenue": ["mc_pro_SaleRevenue", "SaleRevenue"],
+    "SaleRevenueRatio": ["mc_pro_SaleRevenueRatio", "SaleRevenueRatio"],
+    "OperatingCost": ["mc_pro_OperatingCost", "OperatingCost"],
+    "OperatingCostRatio": ["mc_pro_OperatingCostRatio", "OperatingCostRatio"],
+    "OperatingProfit": ["mc_pro_OperatingProfit", "OperatingProfit"],
+    "OperatingProfitRatio": ["mc_pro_OperatingProfitRatio", "OperatingProfitRatio"],
+    "OperatingMarginRatio": ["mc_pro_OperatingMarginRatio", "OperatingMarginRatio"],
+    "SaleRevenueGrowth": ["mc_pro_SaleRevenueGrowth", "SaleRevenueGrowth"],
+    "OperatingCostGrowth": ["mc_pro_OperatingCostGrowth", "OperatingCostGrowth"],
+    "OperatingProfitGrowth": ["mc_pro_OperatingProfitGrowth", "OperatingProfitGrowth"],
+    "OperatingMarginGrowth": ["mc_pro_OperatingMarginGrowth", "OperatingMarginGrowth"],
+    "IsDiversifiedOperations": ["mc_degree_IsDiversifiedOperations", "IsDiversifiedOperations"],
+    "MainBusinessInvolvedF": ["mc_degree_MainBusinessInvolvedF", "MainBusinessInvolvedF"],
+    "MainBusinessInvolvedS": ["mc_degree_MainBusinessInvolvedS", "MainBusinessInvolvedS"],
+    "IncomeHHI": ["mc_degree_IncomeHHI", "IncomeHHI"],
+    "IncomeEntropyIndex": ["mc_degree_IncomeEntropyIndex", "IncomeEntropyIndex"],
+}
+
+
 def pick_first(df: pd.DataFrame, candidates: Sequence[str], default: Optional[str] = None) -> Optional[str]:
     for c in candidates:
         if c in df.columns:
@@ -90,6 +112,28 @@ def load_merged(data_dir: Path) -> pd.DataFrame:
     raise FileNotFoundError("merged_filtered.csv not found in data-dir or data-dir/filtered")
 
 
+def parse_years(values: Optional[Sequence[str]]) -> Optional[set[int]]:
+    if not values:
+        return None
+    return {int(v) for v in values}
+
+
+def filter_by_years(df: pd.DataFrame, years: Optional[set[int]]) -> pd.DataFrame:
+    if not years:
+        return df
+    date_col = pick_first(df, ["Date", "EndDate", "Accper"])
+    if date_col is None:
+        return df
+    out = df.copy()
+    numeric_years = pd.to_numeric(out[date_col], errors="coerce")
+    if numeric_years.notna().any():
+        yr = numeric_years.astype("Int64")
+    else:
+        parsed = pd.to_datetime(out[date_col], errors="coerce")
+        yr = parsed.dt.year
+    return out[yr.isin(years)].copy()
+
+
 def add_statement_and_filter(df: pd.DataFrame, state_col: str, statement_type: str) -> pd.DataFrame:
     code = {"parent": "2", "consolidated": "1"}[statement_type]
     codes = normalize_code(df[state_col])
@@ -110,6 +154,28 @@ def extract_metadata(df: pd.DataFrame) -> Dict[str, pd.Series]:
     return meta
 
 
+def populate_output_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for target, candidates in OUTPUT_SOURCE_CANDIDATES.items():
+        source = pick_first(out, candidates)
+        if source is not None:
+            out[target] = out[source]
+    return out
+
+
+def backfill_company_year_fields(df: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
+    out = df.copy()
+    key_cols = ["Symbol", "EndDate"]
+    if not all(c in out.columns for c in key_cols):
+        return out
+
+    for col in columns:
+        if col in out.columns:
+            # Fill blanks from sibling rows of the same company-year when data exists there.
+            out[col] = out.groupby(key_cols)[col].transform(lambda s: s.ffill().bfill())
+    return out
+
+
 def build_product_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int]:
     meta = extract_metadata(df)
     date_col = pick_first(df, ["Date", "EndDate", "Accper"])
@@ -124,7 +190,9 @@ def build_product_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int]
     if "EndDate" not in working.columns:
         working["EndDate"] = working[date_col]
 
-    working["StateTypeCode"] = normalize_code(working[state_col])
+    working = populate_output_columns(working)
+    working = backfill_company_year_fields(working, PRODUCT_COLUMNS)
+    working["StateTypeCode"] = normalize_code(working[state_col]) if state_col in working.columns else None
     for k, v in meta.items():
         working[k] = v
 
@@ -155,8 +223,10 @@ def build_div_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int, int
     if "EndDate" not in working.columns:
         working["EndDate"] = working[date_col]
 
-    working["ClassificationStandard"] = normalize_code(working[class_col])
-    working["StateTypeCode"] = normalize_code(working[state_col])
+    working = populate_output_columns(working)
+    working = backfill_company_year_fields(working, DIV_COLUMNS)
+    working["ClassificationStandard"] = normalize_code(working[class_col]) if class_col in working.columns else None
+    working["StateTypeCode"] = normalize_code(working[state_col]) if state_col in working.columns else None
     for k, v in meta.items():
         working[k] = v
 
@@ -188,12 +258,20 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Generate classification outputs from merged_filtered.csv")
     parser.add_argument("--data-dir", type=Path, default=Path.cwd(), help="Base data directory (looks for filtered/merged_filtered.csv)")
     parser.add_argument("--output-dir", type=Path, default=None, help="Directory to write outputs (default: <data-dir>/filtered/classified)")
+    parser.add_argument(
+        "--years",
+        nargs="+",
+        default=None,
+        help="Optional years to keep before classification (e.g. --years 2018 2019 2020 2021 2022 2023 2024).",
+    )
     args = parser.parse_args(argv)
 
     base_dir = args.data_dir.resolve()
     output_dir = (args.output_dir or (base_dir / "filtered" / "classified")).resolve()
 
     merged = load_merged(base_dir)
+    target_years = parse_years(args.years)
+    merged = filter_by_years(merged, target_years)
 
     parent_prod, cons_prod = build_product_outputs(merged, output_dir)
     parent_prod_div, cons_prod_div, parent_sales_div, cons_sales_div = build_div_outputs(merged, output_dir)

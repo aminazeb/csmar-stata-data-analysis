@@ -5,6 +5,13 @@ from typing import Dict, Optional, Sequence
 import pandas as pd
 
 
+def is_categorical_field(col: str) -> bool:
+    """Return True for code/label-like columns that should not be numerically averaged."""
+    name = col.lower()
+    tokens = ("code", "type", "standard", "symbol", "stkcd", "industry", "currency")
+    return any(token in name for token in tokens)
+
+
 # Utility helpers
 
 def normalize_company_id(series: pd.Series) -> pd.Series:
@@ -33,10 +40,19 @@ def resolve_date_col(df: pd.DataFrame, declared: Optional[str]) -> Optional[str]
     return None
 
 
+def resolve_industry_col(df: pd.DataFrame) -> Optional[str]:
+    for col in ("cg_co_Nnindcd", "cg_co_IndustryCodeC", "cg_co_Nindcd", "cg_co_Indcd"):
+        if col in df.columns:
+            return col
+    return None
+
+
 def coerce_numeric_columns(df: pd.DataFrame, group_cols: set) -> tuple[pd.DataFrame, Sequence[str]]:
     numeric_cols = []
     for col in df.columns:
         if col in group_cols:
+            continue
+        if is_categorical_field(col):
             continue
         coerced = pd.to_numeric(df[col], errors="coerce")
         if coerced.notna().any():
@@ -200,16 +216,20 @@ def merge_filtered(data_dir: Path, output_path: Path) -> None:
     if "ifs_emp" in dfs:
         ind_df = dfs["ifs_emp"].copy()
         if "IndustryCode" in ind_df.columns and "SgnYear" in ind_df.columns:
-            merged["__Year"] = pd.to_datetime(merged["Date"], errors="coerce").dt.year.astype("Int64")
-            ind_df["SgnYear"] = pd.to_numeric(ind_df["SgnYear"], errors="coerce").astype("Int64")
-            ind_df = ind_df.rename(columns={"LegalEntityNum": "ifs_LegalEntityNum", "EmployeeNum": "ifs_EmployeeNum"})
-            merged = merged.merge(
-                ind_df,
-                how="left",
-                left_on=["__Year", "cg_co_Nnindcd"],
-                right_on=["SgnYear", "IndustryCode"],
-            )
-            merged = merged.drop(columns=[c for c in ["__Year", "SgnYear", "IndustryCode"] if c in merged.columns])
+            industry_col = resolve_industry_col(merged)
+            if industry_col:
+                merged["__Year"] = pd.to_datetime(merged["Date"], errors="coerce").dt.year.astype("Int64")
+                ind_df["SgnYear"] = pd.to_numeric(ind_df["SgnYear"], errors="coerce").astype("Int64")
+                ind_df = ind_df.rename(columns={"LegalEntityNum": "ifs_LegalEntityNum", "EmployeeNum": "ifs_EmployeeNum"})
+                merged = merged.merge(
+                    ind_df,
+                    how="left",
+                    left_on=["__Year", industry_col],
+                    right_on=["SgnYear", "IndustryCode"],
+                )
+                merged = merged.drop(columns=[c for c in ["__Year", "SgnYear", "IndustryCode"] if c in merged.columns])
+            else:
+                print("Skipping IFS enrichment: no industry code column found in merged output")
 
     # Assign a unique serial per company to make counts explicit
     unique_symbols = sorted(merged["Symbol"].dropna().unique())

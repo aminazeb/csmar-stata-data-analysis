@@ -19,7 +19,7 @@ Filtered source counts
 - IFS_IndRegMSELE (industry employees): rows=1116
 - MC_DiverOperationsDegree (diversification): rows=9005, unique_ids=1063, years=2018-2024 (7 uniq)
 - MC_DiverOperationsPro (product operations): rows=19031, unique_ids=1063, years=2018-2024 (7 uniq)
-- ocscore (O-score inputs): rows=7172, unique_ids=1064, years=2018-2024 (7 uniq)
+- ocscore (O-score inputs): rows=7172, unique_ids=1063, years=2018-2024 (7 uniq)
 - OFDI_FININDEX (Tobin Q style): rows=3573, unique_ids=771, years=2018-2022 (5 uniq)
 
 Merged file summary
@@ -28,4 +28,102 @@ Rows: 6,988
 Unique companies (Symbol): 1,063 (from merged file)
 Year span: 2018 - 2024 (7 unique years)
 O-score columns present: 24; rows with O-score value: 6,946
-Statement type from MC data (StateTypeCode: 1=Consolidated, 2=Parent); rows by code: 2.0:4568, nan:2420
+Statement type from MC data (StateTypeCode: 1=Consolidated, 2=Parent); rows by code: 2.0:4568
+
+Classified diversification company summary
+----------------------------------------
+- parent product diversification: rows=1246, unique_companies=474
+- consolidated product diversification: rows=0, unique_companies=0
+- parent sales diversification: rows=629, unique_companies=277
+- consolidated sales diversification: rows=0, unique_companies=0
+
+Overlap: parent_product_diversification vs parent_sales_diversification -> overlapping_companies=80
+company, years_in_left_file, years_in_right_file
+- 300048: 2024 | 2022,2023
+- 300087: 2024 | 2021,2022,2023
+- 300097: 2024 | 2018,2019
+- 300105: 2020 | 2024
+- 300122: 2020,2023 | 2021,2022,2024
+- 300124: 2020,2022,2024 | 2021,2023
+- 300131: 2024 | 2021,2022
+- 300144: 2022 | 2020,2021,2023,2024
+- 300192: 2024 | 2021,2022
+- 300348: 2024 | 2022
+- 300406: 2024 | 2022
+- 300466: 2024 | 2020
+- 300470: 2023,2024 | 2021
+- 300490: 2024 | 2022,2023
+- 300501: 2020,2024 | 2022
+- 300518: 2024 | 2020,2021
+- 300520: 2023 | 2020,2021,2022,2024
+- 300566: 2022,2023 | 2021
+- 300589: 2023,2024 | 2021,2022
+- 300592: 2024 | 2020,2023
+- 300719: 2024 | 2021,2022,2023
+- 300721: 2021 | 2022
+- 300741: 2020,2021,2022 | 2023,2024
+- 300819: 2020,2021,2023 | 2022,2024
+- 300830: 2023 | 2021,2022,2024
+- 300847: 2023,2024 | 2021
+- 300861: 2020 | 2023
+- 300900: 2024 | 2020,2021,2022
+- 300915: 2021,2023,2024 | 2022
+- 300919: 2024 | 2021,2022
+- 600035: 2020,2022 | 2023,2024
+- 600051: 2024 | 2020,2022
+- 600115: 2018 | 2023
+- 600133: 2020,2023 | 2024
+- 600158: 2020,2023 | 2021,2022,2024
+- 600180: 2024 | 2021,2022,2023
+- 600195: 2024 | 2018,2019
+- 600269: 2020,2021,2022,2023,2024 | 2019
+- 600308: 2024 | 2018,2019,2021,2022
+- 600365: 2023,2024 | 2018,2019
+- 600418: 2021,2024 | 2022,2023
+- 600422: 2024 | 2022,2023
+- 600481: 2021,2024 | 2022
+- 600511: 2020,2021,2023,2024 | 2022
+- 600573: 2024 | 2022
+- 600601: 2018,2020,2021 | 2022
+- 600651: 2020 | 2021,2023
+- 600661: 2021 | 2020
+- 600702: 2018,2020,2021,2022,2023 | 2024
+- 600721: 2023,2024 | 2018
+- 600763: 2023 | 2021,2022
+- 600768: 2020,2023,2024 | 2022
+- 600769: 2020,2021,2023 | 2022,2024
+- 600792: 2024 | 2022
+- 601001: 2020,2022 | 2023,2024
+- 601002: 2023 | 2022
+- 601005: 2018,2021,2022,2024 | 2023
+- 601168: 2020 | 2021,2022
+- 601177: 2020,2023 | 2022
+- 601865: 2024 | 2022
+- 601969: 2020,2022,2023,2024 | 2021
+- 603111: 2020 | 2021,2022,2024
+- 603155: 2021,2022,2023 | 2024
+- 603220: 2021 | 2022
+- 603279: 2024 | 2023
+- 603283: 2024 | 2022
+- 603360: 2020,2021,2023 | 2022
+- 603389: 2023,2024 | 2022
+- 603558: 2022 | 2021
+- 603713: 2023 | 2021,2022,2024
+- 603725: 2020,2021,2022 | 2023,2024
+- 603730: 2023,2024 | 2020
+- 603788: 2020 | 2022,2023
+- 605186: 2024 | 2021,2022
+- 605199: 2024 | 2021,2022
+- 688222: 2021,2022,2023,2024 | 2020
+- 688256: 2021,2022 | 2023
+- 688333: 2019,2020,2021 | 2022
+- 688369: 2024 | 2022
+- 688505: 2020,2021,2023 | 2024
+
+Overlap: consolidated_product_diversification vs consolidated_sales_diversification -> overlapping_companies=0
+Pair overlap companies: consolidated_product_diversification vs consolidated_sales_diversification = 0
+Pair overlap companies: consolidated_product_diversification vs parent_product_diversification = 0
+Pair overlap companies: consolidated_product_diversification vs parent_sales_diversification = 0
+Pair overlap companies: consolidated_sales_diversification vs parent_product_diversification = 0
+Pair overlap companies: consolidated_sales_diversification vs parent_sales_diversification = 0
+Pair overlap companies: parent_product_diversification vs parent_sales_diversification = 80

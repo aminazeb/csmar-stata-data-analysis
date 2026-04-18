@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
+from itertools import combinations
 
 import pandas as pd
 
@@ -50,6 +51,56 @@ def summarize_years(df: pd.DataFrame, date_col: str) -> Optional[Tuple[int, int,
 def normalize_symbol(series: pd.Series) -> pd.Series:
     out = series.astype(str).str.strip()
     return out.replace({"nan": pd.NA}).str.replace(r"\.0$", "", regex=True)
+
+
+def normalize_year_series(series: pd.Series) -> pd.Series:
+    years_num = pd.to_numeric(series, errors="coerce")
+    mask_year = (years_num >= 1900) & (years_num <= 2100)
+    if mask_year.any() and mask_year.sum() >= 0.5 * mask_year.count():
+        return years_num.where(mask_year).astype("Int64")
+    dates = pd.to_datetime(series, errors="coerce")
+    return dates.dt.year.astype("Int64")
+
+
+def get_symbol_years_map(df: pd.DataFrame) -> Dict[str, set[int]]:
+    id_col = detect_id_col(df)
+    date_col = detect_date_col(df)
+    if not id_col or not date_col:
+        return {}
+
+    temp = df[[id_col, date_col]].copy()
+    temp["__symbol"] = normalize_symbol(temp[id_col])
+    temp["__year"] = normalize_year_series(temp[date_col])
+    temp = temp.dropna(subset=["__symbol", "__year"]).copy()
+    temp["__year"] = temp["__year"].astype(int)
+
+    grouped = temp.groupby("__symbol")["__year"].apply(lambda s: set(sorted(s.unique())))
+    return grouped.to_dict()
+
+
+def summarize_classified_diversification(classified_dir: Path) -> Dict[str, Dict[str, object]]:
+    files = {
+        "parent_product_diversification": classified_dir / "parent_product_diversification.csv",
+        "consolidated_product_diversification": classified_dir / "consolidated_product_diversification.csv",
+        "parent_sales_diversification": classified_dir / "parent_sales_diversification.csv",
+        "consolidated_sales_diversification": classified_dir / "consolidated_sales_diversification.csv",
+    }
+
+    summary: Dict[str, Dict[str, object]] = {}
+    for key, path in files.items():
+        if not path.exists():
+            summary[key] = {"exists": False, "path": path}
+            continue
+        df = pd.read_csv(path, low_memory=False)
+        sym_years = get_symbol_years_map(df)
+        summary[key] = {
+            "exists": True,
+            "path": path,
+            "rows": len(df),
+            "unique_companies": len(sym_years),
+            "symbol_years": sym_years,
+        }
+    return summary
 
 
 def summarize_filtered_sources(filtered_dir: Path) -> Dict[str, Dict[str, object]]:
@@ -164,6 +215,58 @@ def build_report(data_dir: Path) -> str:
                 + summary
             )
             break
+
+    classified_dir = filtered_dir / "classified"
+    lines.append("")
+    lines.append("Classified diversification company summary")
+    lines.append("----------------------------------------")
+    classified = summarize_classified_diversification(classified_dir)
+
+    for key, info in classified.items():
+        label = key.replace("_", " ")
+        if not info.get("exists"):
+            lines.append(f"- {label}: missing")
+            continue
+        lines.append(
+            f"- {label}: rows={info['rows']}, unique_companies={info['unique_companies']}"
+        )
+
+    # Compare overlaps between each product-vs-sales pair for same statement type.
+    pair_keys = [
+        ("parent_product_diversification", "parent_sales_diversification"),
+        ("consolidated_product_diversification", "consolidated_sales_diversification"),
+    ]
+    for left_key, right_key in pair_keys:
+        left = classified.get(left_key, {})
+        right = classified.get(right_key, {})
+        if not (left.get("exists") and right.get("exists")):
+            continue
+
+        left_map = left.get("symbol_years", {})
+        right_map = right.get("symbol_years", {})
+        overlap = sorted(set(left_map.keys()) & set(right_map.keys()))
+        lines.append("")
+        lines.append(
+            f"Overlap: {left_key} vs {right_key} -> overlapping_companies={len(overlap)}"
+        )
+        if not overlap:
+            continue
+        lines.append("company, years_in_left_file, years_in_right_file")
+        for sym in overlap:
+            left_years = sorted(left_map.get(sym, set()))
+            right_years = sorted(right_map.get(sym, set()))
+            left_txt = ",".join(str(y) for y in left_years) if left_years else "none"
+            right_txt = ",".join(str(y) for y in right_years) if right_years else "none"
+            lines.append(f"- {sym}: {left_txt} | {right_txt}")
+
+    # Also provide pairwise overlap across all diversification files.
+    available = [k for k, v in classified.items() if v.get("exists")]
+    for left_key, right_key in combinations(sorted(available), 2):
+        left_map = classified[left_key].get("symbol_years", {})
+        right_map = classified[right_key].get("symbol_years", {})
+        overlap_count = len(set(left_map.keys()) & set(right_map.keys()))
+        lines.append(f"Pair overlap companies: {left_key} vs {right_key} = {overlap_count}")
+
     return "\n".join(lines)
 
 
