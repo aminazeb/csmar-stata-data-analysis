@@ -8,10 +8,10 @@ data quality reports, filtering, and export capabilities.
 Flags created in: normalize_all_metrics() function in apply_analytics.py (lines 106-171)
 
 Usage:
-    python3 analyze_data_quality.py --data-dir ./data
-    python3 analyze_data_quality.py --data-dir ./data --report
+    python3 analyze_data_quality.py --data-dir ./data                          # Generate report to docs/data_quality_report.txt
+    python3 analyze_data_quality.py --data-dir ./data --report-output custom.txt
+    python3 analyze_data_quality.py --data-dir ./data --focus flag_x4_spike
     python3 analyze_data_quality.py --data-dir ./data --export-flagged flagged_data.csv
-    python3 analyze_data_quality.py --data-dir ./data --focus x4_spike
 """
 
 import argparse
@@ -35,25 +35,27 @@ def load_merged(data_dir: Path) -> pd.DataFrame:
     raise FileNotFoundError("merged_filtered.csv not found")
 
 
-def analyze_all_flags(df: pd.DataFrame) -> None:
+def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> None:
     """Generate comprehensive report on all data quality flags."""
 
-    print("\n" + "=" * 120)
-    print("DATA QUALITY FLAGS - COMPREHENSIVE ANALYSIS")
-    print("=" * 120)
+    lines = []
+
+    lines.append("\n" + "=" * 120)
+    lines.append("DATA QUALITY FLAGS - COMPREHENSIVE ANALYSIS")
+    lines.append("=" * 120)
 
     # Overall statistics
     total_rows = len(df)
     flagged_rows = (df["flag_data_quality_issues"] > 0).sum()
     clean_rows = total_rows - flagged_rows
 
-    print(f"\n📊 OVERALL STATISTICS:")
-    print(f"  Total rows: {total_rows:,}")
-    print(f"  Clean rows (no flags): {clean_rows:,} ({clean_rows/total_rows*100:.1f}%)")
-    print(f"  Flagged rows (1+ issues): {flagged_rows:,} ({flagged_rows/total_rows*100:.1f}%)")
+    lines.append(f"\n📊 OVERALL STATISTICS:")
+    lines.append(f"  Total rows: {total_rows:,}")
+    lines.append(f"  Clean rows (no flags): {clean_rows:,} ({clean_rows/total_rows*100:.1f}%)")
+    lines.append(f"  Flagged rows (1+ issues): {flagged_rows:,} ({flagged_rows/total_rows*100:.1f}%)")
 
     # Individual flag breakdown
-    print(f"\n🚩 INDIVIDUAL FLAG BREAKDOWN:")
+    lines.append(f"\n🚩 INDIVIDUAL FLAG BREAKDOWN:")
 
     flags = {
         "flag_x1_extreme": ("Working Capital Anomaly", "abs(X1) > 2.0"),
@@ -61,120 +63,142 @@ def analyze_all_flags(df: pd.DataFrame) -> None:
         "flag_x3_extreme": ("Extreme EBIT Loss", "X3 < -0.3 (operating loss > 30% assets)"),
         "flag_x4_spike": ("Market Valuation Spike", "X4 > company-specific cap"),
         "flag_x4_consistently_high": ("Consistently High Valuation", "Median X4 > 50x"),
-        "flag_x5_negative": ("❌ DATA ERROR: Negative Revenue", "X5 < 0 (impossible!)"),
-        "flag_leverage_extreme": ("❌ INSOLVENT: TL > TA", "Leverage > 1.0 (liabilities > assets)"),
+        "flag_x5_negative": ("DATA ERROR: Negative Revenue", "X5 < 0 (impossible!)"),
+        "flag_leverage_extreme": ("INSOLVENT: TL > TA", "Leverage > 1.0 (liabilities > assets)"),
     }
 
     for col, (description, trigger) in flags.items():
         count = df[col].sum()
         pct = count / total_rows * 100
         status = "✓" if count == 0 else "⚠️" if count < 100 else "🔴"
-        print(f"\n  {status} {description}")
-        print(f"     Trigger: {trigger}")
-        print(f"     Count: {count:,} rows ({pct:.1f}%)")
+        lines.append(f"\n  {status} {description}")
+        lines.append(f"     Trigger: {trigger}")
+        lines.append(f"     Count: {count:,} rows ({pct:.1f}%)")
 
     # Multi-flag analysis
-    print(f"\n📈 MULTIPLE FLAGS PER ROW:")
+    lines.append(f"\n📈 MULTIPLE FLAGS PER ROW:")
     multi_flag_dist = df["flag_data_quality_issues"].value_counts().sort_index()
     for num_flags, count in multi_flag_dist.items():
         if num_flags > 0:
-            print(f"  Rows with {num_flags} flag(s): {count:,} ({count/total_rows*100:.1f}%)")
+            lines.append(f"  Rows with {num_flags} flag(s): {count:,} ({count/total_rows*100:.1f}%)")
 
     # Z-score comparison by flag status
-    print(f"\n📊 Z-SCORE COMPARISON:")
-    print(f"  Clean data (no flags):")
+    lines.append(f"\n📊 Z-SCORE COMPARISON:")
+    lines.append(f"  Clean data (no flags):")
     clean_z = df[df["flag_data_quality_issues"] == 0]["AltmanZScore_Normalized"]
-    print(f"    Mean: {clean_z.mean():.2f}")
-    print(f"    Median: {clean_z.median():.2f}")
-    print(f"    Safe (>2.0): {(clean_z > 2.0).sum():,}")
-    print(f"    Distress (<1.0): {(clean_z < 1.0).sum():,}")
+    lines.append(f"    Mean: {clean_z.mean():.2f}")
+    lines.append(f"    Median: {clean_z.median():.2f}")
+    lines.append(f"    Safe (>2.0): {(clean_z > 2.0).sum():,}")
+    lines.append(f"    Distress (<1.0): {(clean_z < 1.0).sum():,}")
 
-    print(f"\n  Flagged data (1+ issues):")
+    lines.append(f"\n  Flagged data (1+ issues):")
     flagged_z = df[df["flag_data_quality_issues"] > 0]["AltmanZScore_Normalized"]
-    print(f"    Mean: {flagged_z.mean():.2f}")
-    print(f"    Median: {flagged_z.median():.2f}")
-    print(f"    Safe (>2.0): {(flagged_z > 2.0).sum():,}")
-    print(f"    Distress (<1.0): {(flagged_z < 1.0).sum():,}")
+    lines.append(f"    Mean: {flagged_z.mean():.2f}")
+    lines.append(f"    Median: {flagged_z.median():.2f}")
+    lines.append(f"    Safe (>2.0): {(flagged_z > 2.0).sum():,}")
+    lines.append(f"    Distress (<1.0): {(flagged_z < 1.0).sum():,}")
 
     # Examples of flagged records
-    print(f"\n📋 EXAMPLES OF FLAGGED RECORDS:")
+    lines.append(f"\n📋 EXAMPLES OF FLAGGED RECORDS:")
 
-    print(f"\n  🔴 DATA ERROR: Negative Revenue (flag_x5_negative = 1):")
+    lines.append(f"\n  🔴 DATA ERROR: Negative Revenue (flag_x5_negative = 1):")
     x5_neg = df[df["flag_x5_negative"] > 0][["Symbol", "Date", "X5_SalesToTotalAssets", "X5_Normalized"]]
     if len(x5_neg) > 0:
         for idx, row in x5_neg.iterrows():
-            print(f"     {row['Symbol']} {int(row['Date'])}: X5={row['X5_SalesToTotalAssets']:.6f} → {row['X5_Normalized']:.6f}")
+            lines.append(f"     {row['Symbol']} {int(row['Date'])}: X5={row['X5_SalesToTotalAssets']:.6f} → {row['X5_Normalized']:.6f}")
     else:
-        print(f"     None found")
+        lines.append(f"     None found")
 
-    print(f"\n  🔴 INSOLVENT: TL > TA (flag_leverage_extreme = 1):")
+    lines.append(f"\n  🔴 INSOLVENT: TL > TA (flag_leverage_extreme = 1):")
     lev_extreme = df[df["flag_leverage_extreme"] > 0][["Symbol", "Date", "Leverage", "Leverage_Normalized"]].head(5)
     if len(lev_extreme) > 0:
         for idx, row in lev_extreme.iterrows():
-            print(f"     {row['Symbol']} {int(row['Date'])}: Leverage={row['Leverage']:.2f} → {row['Leverage_Normalized']:.2f}")
+            lines.append(f"     {row['Symbol']} {int(row['Date'])}: Leverage={row['Leverage']:.2f} → {row['Leverage_Normalized']:.2f}")
     else:
-        print(f"     None found")
+        lines.append(f"     None found")
 
-    print(f"\n  ⚠️  Market Spike: X4 > Cap (flag_x4_spike = 1):")
+    lines.append(f"\n  ⚠️  Market Spike: X4 > Cap (flag_x4_spike = 1):")
     x4_spike = df[df["flag_x4_spike"] > 0][["Symbol", "Date", "X4_MarketValueToTotalLiabilities", "X4_Cap", "X4_Normalized"]].head(5)
     if len(x4_spike) > 0:
         for idx, row in x4_spike.iterrows():
-            print(f"     {row['Symbol']} {int(row['Date'])}: X4={row['X4_MarketValueToTotalLiabilities']:.2f}x → Cap={row['X4_Cap']:.2f}x")
+            lines.append(f"     {row['Symbol']} {int(row['Date'])}: X4={row['X4_MarketValueToTotalLiabilities']:.2f}x → Cap={row['X4_Cap']:.2f}x")
     else:
-        print(f"     None found")
+        lines.append(f"     None found")
 
-    print(f"\n  ⚠️  Extreme Loss: X2 < -0.5 (flag_x2_extreme = 1):")
+    lines.append(f"\n  ⚠️  Extreme Loss: X2 < -0.5 (flag_x2_extreme = 1):")
     x2_ext = df[df["flag_x2_extreme"] > 0][["Symbol", "Date", "X2_RetainedEarningsToTotalAssets", "X2_Normalized"]].head(5)
     if len(x2_ext) > 0:
         for idx, row in x2_ext.iterrows():
-            print(f"     {row['Symbol']} {int(row['Date'])}: X2={row['X2_RetainedEarningsToTotalAssets']:.4f} → {row['X2_Normalized']:.4f}")
+            lines.append(f"     {row['Symbol']} {int(row['Date'])}: X2={row['X2_RetainedEarningsToTotalAssets']:.4f} → {row['X2_Normalized']:.4f}")
     else:
-        print(f"     None found")
+        lines.append(f"     None found")
 
-    print("\n" + "=" * 120)
+    lines.append("\n" + "=" * 120)
+
+    # Write or print
+    report_text = "\n".join(lines)
+    
+    if output_file:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(report_text)
+        print(f"✓ Report written to {output_file}")
+    else:
+        print(report_text)
 
 
-def focus_on_flag(df: pd.DataFrame, flag_name: str) -> None:
+def focus_on_flag(df: pd.DataFrame, flag_name: str, output_file: Optional[Path] = None) -> None:
     """Detailed analysis of a specific flag."""
 
     if flag_name not in df.columns:
         print(f"❌ Flag '{flag_name}' not found in data")
         return
 
+    lines = []
     flagged = df[df[flag_name] > 0]
-    print(f"\n" + "=" * 120)
-    print(f"DETAILED ANALYSIS: {flag_name}")
-    print(f"=" * 120)
+    lines.append("\n" + "=" * 120)
+    lines.append(f"DETAILED ANALYSIS: {flag_name}")
+    lines.append("=" * 120)
 
-    print(f"\nTotal affected: {len(flagged):,} rows ({len(flagged)/len(df)*100:.1f}%)")
+    lines.append(f"\nTotal affected: {len(flagged):,} rows ({len(flagged)/len(df)*100:.1f}%)")
 
     # Show distribution by year
-    print(f"\nDistribution by year:")
+    lines.append(f"\nDistribution by year:")
     year_dist = flagged["Date"].value_counts().sort_index()
     for year, count in year_dist.items():
-        print(f"  {int(year)}: {count:,} rows")
+        lines.append(f"  {int(year)}: {count:,} rows")
 
     # Show distribution by company
-    print(f"\nTop 10 companies affected:")
+    lines.append(f"\nTop 10 companies affected:")
     company_dist = flagged["Symbol"].value_counts().head(10)
     for symbol, count in company_dist.items():
-        print(f"  {symbol}: {count} occurrences")
+        lines.append(f"  {symbol}: {count} occurrences")
 
     # Correlation with Z-score
-    print(f"\nZ-Score statistics for flagged records:")
+    lines.append(f"\nZ-Score statistics for flagged records:")
     flagged_z = flagged["AltmanZScore_Normalized"]
-    print(f"  Mean: {flagged_z.mean():.2f}")
-    print(f"  Median: {flagged_z.median():.2f}")
-    print(f"  Min: {flagged_z.min():.2f}")
-    print(f"  Max: {flagged_z.max():.2f}")
+    lines.append(f"  Mean: {flagged_z.mean():.2f}")
+    lines.append(f"  Median: {flagged_z.median():.2f}")
+    lines.append(f"  Min: {flagged_z.min():.2f}")
+    lines.append(f"  Max: {flagged_z.max():.2f}")
 
     # Show sample records
-    print(f"\nFirst 10 flagged records:")
+    lines.append(f"\nFirst 10 flagged records:")
     cols = ["Symbol", "Date", "AltmanZScore_Normalized", "ROA", "Leverage"]
     display = flagged[cols].head(10)
-    print(display.to_string(index=False))
+    lines.append(display.to_string(index=False))
 
-    print("\n" + "=" * 120)
+    lines.append("\n" + "=" * 120)
+
+    # Write or print
+    report_text = "\n".join(lines)
+    
+    if output_file:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_file, "a") as f:
+            f.write(report_text)
+        print(f"✓ Appended to {output_file}")
+    else:
+        print(report_text)
 
 
 def export_by_flag(df: pd.DataFrame, output_path: Path, include_clean: bool = False) -> None:
@@ -221,6 +245,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="Generate comprehensive flag analysis report"
     )
     parser.add_argument(
+        "--report-output", type=Path, default=Path("docs/data_quality_report.txt"),
+        help="Output file for report (default: docs/data_quality_report.txt)"
+    )
+    parser.add_argument(
         "--focus", type=str,
         help="Focus on specific flag (e.g., flag_x4_spike)"
     )
@@ -250,14 +278,15 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         return
 
     # Default: show report if no other action specified
-    if not any([args.report, args.focus, args.export_flagged, args.export_clean, args.export_flag]):
+    if not any([args.focus, args.export_flagged, args.export_clean, args.export_flag]):
         args.report = True
 
     if args.report:
-        analyze_all_flags(df)
+        # Always write to file for report
+        analyze_all_flags(df, output_file=args.report_output)
 
     if args.focus:
-        focus_on_flag(df, args.focus)
+        focus_on_flag(df, args.focus, output_file=None)
 
     if args.export_flagged:
         export_by_flag(df, args.export_flagged, include_clean=False)

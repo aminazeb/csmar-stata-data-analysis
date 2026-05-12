@@ -1,0 +1,86 @@
+
+========================================================================================================================
+DATA QUALITY FLAGS - COMPREHENSIVE ANALYSIS
+========================================================================================================================
+
+📊 OVERALL STATISTICS:
+  Total rows: 6,988
+  Clean rows (no flags): 6,349 (90.9%)
+  Flagged rows (1+ issues): 639 (9.1%)
+
+🚩 INDIVIDUAL FLAG BREAKDOWN:
+
+  ✓ Working Capital Anomaly
+     Trigger: abs(X1) > 2.0
+     Count: 0 rows (0.0%)
+
+  ⚠️ Extreme Profitability Loss
+     Trigger: X2 < -0.5 (loss > 50% assets)
+     Count: 32 rows (0.5%)
+
+  ⚠️ Extreme EBIT Loss
+     Trigger: X3 < -0.3 (operating loss > 30% assets)
+     Count: 71 rows (1.0%)
+
+  🔴 Market Valuation Spike
+     Trigger: X4 > company-specific cap
+     Count: 566 rows (8.1%)
+
+  🔴 Consistently High Valuation
+     Trigger: Median X4 > 50x
+     Count: 392 rows (5.6%)
+
+  ⚠️ DATA ERROR: Negative Revenue
+     Trigger: X5 < 0 (impossible!)
+     Count: 2 rows (0.0%)
+
+  ⚠️ INSOLVENT: TL > TA
+     Trigger: Leverage > 1.0 (liabilities > assets)
+     Count: 12 rows (0.2%)
+
+📈 MULTIPLE FLAGS PER ROW:
+  Rows with 1 flag(s): 602 (8.6%)
+  Rows with 2 flag(s): 30 (0.4%)
+  Rows with 3 flag(s): 7 (0.1%)
+
+📊 Z-SCORE COMPARISON:
+  Clean data (no flags):
+    Mean: 8.96
+    Median: 5.00
+    Safe (>2.0): 5,791
+    Distress (<1.0): 77
+
+  Flagged data (1+ issues):
+    Mean: 13.72
+    Median: 7.72
+    Safe (>2.0): 596
+    Distress (<1.0): 23
+
+📋 EXAMPLES OF FLAGGED RECORDS:
+
+  🔴 DATA ERROR: Negative Revenue (flag_x5_negative = 1):
+     300262.0 2021: X5=-0.018693 → 0.000000
+     300475.0 2022: X5=-0.000008 → 0.000000
+
+  🔴 INSOLVENT: TL > TA (flag_leverage_extreme = 1):
+     600815.0 2018: Leverage=1.06 → 1.00
+     600961.0 2018: Leverage=1.02 → 1.00
+     600651.0 2019: Leverage=1.01 → 1.00
+     688266.0 2019: Leverage=1.01 → 1.00
+     600078.0 2020: Leverage=1.17 → 1.00
+
+  ⚠️  Market Spike: X4 > Cap (flag_x4_spike = 1):
+     300026.0 2018: X4=133.04x → Cap=29.46x
+     300042.0 2018: X4=17.76x → Cap=15.86x
+     300230.0 2018: X4=13.53x → Cap=11.09x
+     300231.0 2018: X4=6.03x → Cap=5.08x
+     300237.0 2018: X4=5.72x → Cap=4.99x
+
+  ⚠️  Extreme Loss: X2 < -0.5 (flag_x2_extreme = 1):
+     300008.0 2018: X2=-0.5385 → -0.5000
+     300116.0 2018: X2=-0.7252 → -0.5000
+     300247.0 2018: X2=-0.5618 → -0.5000
+     300291.0 2018: X2=-0.8553 → -0.5000
+     300292.0 2018: X2=-0.6131 → -0.5000
+
+========================================================================================================================

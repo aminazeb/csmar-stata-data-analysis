@@ -199,13 +199,19 @@ All 8 flags automatically flow through entire pipeline.
 
 ### Data Quality Analysis
 
-Generate comprehensive report on all flags:
+Generate comprehensive report on all flags (saves to `docs/data_quality_report.txt`):
 
 ```bash
 python3 analyze_data_quality.py --data-dir ./data
 ```
 
-Focus on specific flag with detailed analysis:
+Custom report output path:
+
+```bash
+python3 analyze_data_quality.py --data-dir ./data --report-output my_report.txt
+```
+
+Focus on specific flag with detailed analysis (prints to stdout):
 
 ```bash
 python3 analyze_data_quality.py --data-dir ./data --focus flag_x4_spike
