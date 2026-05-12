@@ -49,13 +49,13 @@ def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> N
     flagged_rows = (df["flag_data_quality_issues"] > 0).sum()
     clean_rows = total_rows - flagged_rows
 
-    lines.append(f"\n📊 OVERALL STATISTICS:")
+    lines.append(f"\nOVERALL STATISTICS:")
     lines.append(f"  Total rows: {total_rows:,}")
     lines.append(f"  Clean rows (no flags): {clean_rows:,} ({clean_rows/total_rows*100:.1f}%)")
     lines.append(f"  Flagged rows (1+ issues): {flagged_rows:,} ({flagged_rows/total_rows*100:.1f}%)")
 
     # Individual flag breakdown
-    lines.append(f"\n🚩 INDIVIDUAL FLAG BREAKDOWN:")
+    lines.append(f"\nINDIVIDUAL FLAG BREAKDOWN:")
 
     flags = {
         "flag_x1_extreme": ("Working Capital Anomaly", "abs(X1) > 2.0"),
@@ -70,20 +70,20 @@ def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> N
     for col, (description, trigger) in flags.items():
         count = df[col].sum()
         pct = count / total_rows * 100
-        status = "✓" if count == 0 else "⚠️" if count < 100 else "🔴"
-        lines.append(f"\n  {status} {description}")
+        status = "OK" if count == 0 else "WARN" if count < 100 else "CRITICAL"
+        lines.append(f"\n  [{status}] {description}")
         lines.append(f"     Trigger: {trigger}")
         lines.append(f"     Count: {count:,} rows ({pct:.1f}%)")
 
     # Multi-flag analysis
-    lines.append(f"\n📈 MULTIPLE FLAGS PER ROW:")
+    lines.append(f"\nMULTIPLE FLAGS PER ROW:")
     multi_flag_dist = df["flag_data_quality_issues"].value_counts().sort_index()
     for num_flags, count in multi_flag_dist.items():
         if num_flags > 0:
             lines.append(f"  Rows with {num_flags} flag(s): {count:,} ({count/total_rows*100:.1f}%)")
 
     # Z-score comparison by flag status
-    lines.append(f"\n📊 Z-SCORE COMPARISON:")
+    lines.append(f"\nZ-SCORE COMPARISON:")
     lines.append(f"  Clean data (no flags):")
     clean_z = df[df["flag_data_quality_issues"] == 0]["AltmanZScore_Normalized"]
     lines.append(f"    Mean: {clean_z.mean():.2f}")
@@ -99,9 +99,9 @@ def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> N
     lines.append(f"    Distress (<1.0): {(flagged_z < 1.0).sum():,}")
 
     # Examples of flagged records
-    lines.append(f"\n📋 EXAMPLES OF FLAGGED RECORDS:")
+    lines.append(f"\nEXAMPLES OF FLAGGED RECORDS:")
 
-    lines.append(f"\n  🔴 DATA ERROR: Negative Revenue (flag_x5_negative = 1):")
+    lines.append(f"\n  [CRITICAL] DATA ERROR: Negative Revenue (flag_x5_negative = 1):")
     x5_neg = df[df["flag_x5_negative"] > 0][["Symbol", "Date", "X5_SalesToTotalAssets", "X5_Normalized"]]
     if len(x5_neg) > 0:
         for idx, row in x5_neg.iterrows():
@@ -109,7 +109,7 @@ def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> N
     else:
         lines.append(f"     None found")
 
-    lines.append(f"\n  🔴 INSOLVENT: TL > TA (flag_leverage_extreme = 1):")
+    lines.append(f"\n  [CRITICAL] INSOLVENT: TL > TA (flag_leverage_extreme = 1):")
     lev_extreme = df[df["flag_leverage_extreme"] > 0][["Symbol", "Date", "Leverage", "Leverage_Normalized"]].head(5)
     if len(lev_extreme) > 0:
         for idx, row in lev_extreme.iterrows():
@@ -117,7 +117,7 @@ def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> N
     else:
         lines.append(f"     None found")
 
-    lines.append(f"\n  ⚠️  Market Spike: X4 > Cap (flag_x4_spike = 1):")
+    lines.append(f"\n  [WARN] Market Spike: X4 > Cap (flag_x4_spike = 1):")
     x4_spike = df[df["flag_x4_spike"] > 0][["Symbol", "Date", "X4_MarketValueToTotalLiabilities", "X4_Cap", "X4_Normalized"]].head(5)
     if len(x4_spike) > 0:
         for idx, row in x4_spike.iterrows():
@@ -125,7 +125,7 @@ def analyze_all_flags(df: pd.DataFrame, output_file: Optional[Path] = None) -> N
     else:
         lines.append(f"     None found")
 
-    lines.append(f"\n  ⚠️  Extreme Loss: X2 < -0.5 (flag_x2_extreme = 1):")
+    lines.append(f"\n  [WARN] Extreme Loss: X2 < -0.5 (flag_x2_extreme = 1):")
     x2_ext = df[df["flag_x2_extreme"] > 0][["Symbol", "Date", "X2_RetainedEarningsToTotalAssets", "X2_Normalized"]].head(5)
     if len(x2_ext) > 0:
         for idx, row in x2_ext.iterrows():
