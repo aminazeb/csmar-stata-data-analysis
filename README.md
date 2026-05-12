@@ -51,7 +51,7 @@ Recommended sequence (clean → merge → metrics → summary; add classify if n
 # 2) Merge filtered files into one wide file, collapsing to one row per company-year and adding serial_number (first column)
 /Users/air/Documents/statadata/.venv/bin/python merge_filtered.py --data-dir /Users/air/Documents/statadata/data
 
-# 3) Attach ocscore (Symbol+Date), compute Altman Z + derived metrics, and append value + *_formula columns into merged
+# 3) Attach ocscore (Symbol+Date), compute Altman Z + derived metrics, normalize extremes, create data quality flags, and append into merged
 /Users/air/Documents/statadata/.venv/bin/python apply_analytics.py --data-dir /Users/air/Documents/statadata/data
 
 # 4) (Optional) Classify from the merged file into product and diversification outputs
@@ -65,7 +65,14 @@ What each step produces:
 
 - Step 1 (clean_data.py): filtered source files in `<data-dir>/filtered`, applying year-end (Dec 31) where applicable, year coverage, and parent-only by default; `--allow-consolidated` keeps consolidated too. IFS is filtered only by target years.
 - Step 2 (merge*filtered.py): a wide outer-join `merged_filtered.csv` in `<data-dir>/filtered`, collapsing to one row per company-year (averaging numeric duplicates, first non-numeric), normalizing `Date` to the year integer, and adding a sequential `serial_number` per `Symbol` as the first column; all non-key source columns are retained with source prefixes (the script fails fast if any expected prefixed source column is missing); CG_Ybasic fields are prefixed `cg_ybasic*`, BDT `bdt*fin*`, OFDI `ofdi*finindex*`, industry employees join by year + industry code with `ifs_EmployeeNum`/`ifs_LegalEntityNum`.
-- Step 3 (apply*analytics.py): left-joins ocscore on Symbol+Date (prefixed `ocscore*\*`), then appends AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, ROI, SalesGrowth into merged_filtered.csv, plus matching *_formula columns (Excel-ready strings). ROI uses `fs_comins_B002000000 / fs_combas_A001212000`. `ocscore\_\*`columns are refreshed on each run (existing ones dropped before merge). Add`--output PATH` only if you also want a standalone metrics CSV.
+- Step 3 (apply_analytics.py): left-joins ocscore on Symbol+Date (prefixed `ocscore*\*`), computes raw metrics (X1–X5, Leverage, ROA, etc.), applies hard-clipping normalization to extreme values, creates 8 data quality flags, and appends all into merged_filtered.csv. Outputs:
+  - Raw metrics: AltmanZScore, X1–X5 components, FirmSize_LogTotalAssets, Leverage, ROA, FixedAssetsRatio, ROI, SalesGrowth
+  - Normalized metrics: X1_Normalized–X5_Normalized, X4_Cap, AltmanZScore_Normalized
+  - Data quality flags: flag_x1_extreme, flag_x2_extreme, flag_x3_extreme, flag_x4_spike, flag_x4_consistently_high, flag_x5_negative, flag_leverage_extreme, flag_data_quality_issues
+  - Matching *_formula columns (Excel-ready strings for all metrics)
+  - ROI uses `fs_comins_B002000000 / fs_combas_A001212000`
+  - ocscore_* columns refreshed on each run (existing ones dropped before merge)
+  - Add `--output PATH` only if you also want a standalone metrics CSV
 - Step 4 (classify_data.py, optional): classified outputs in `<data-dir>/filtered/classified`, preserving all merged columns (including analytics, \*\_formula, and ocscore):
   - parent_product_diversification.csv / consolidated_product_diversification.csv (ClassificationStandard=3 + diversification metrics)
   - parent_sales_diversification.csv / consolidated_sales_diversification.csv (ClassificationStandard=2 + diversification metrics)
@@ -129,3 +136,134 @@ Each classified file includes:
 - CSVs with bad rows are retried with python engine and `on_bad_lines="skip"`.
 - Only Dec 31 rows are kept for dated files; change `filter_year_end` if your fiscal year-end differs.
 - ocscore stays unfiltered in cleaning, is merged in analytics on Symbol+Date with `ocscore_*` prefixes, and carries through into both merged and classified outputs.
+- Normalization (applied in apply_analytics.py): Raw Z-Score metrics are normalized by applying hard-clipping to extreme values to reduce distortion from outliers. X4 (market value) gets a company-specific cap at 1.5x historical median. Normalized metrics are stored in X1_Normalized–X5_Normalized columns. AltmanZScore_Normalized uses the corrected coefficient for X5 (1.0 instead of 0.999) and normalized components. All 8 data quality flags are generated during normalization to identify anomalies and errors in the data.
+
+---
+
+## Data Quality Flags
+
+Flags are generated automatically by apply_analytics.py (function normalize_all_metrics(), lines 88-171).
+
+### 8 Flags Available
+
+1. **flag_x1_extreme** — Working Capital Anomaly
+   - Trigger: abs(X1) > 2.0
+   - Count: 0 rows
+   - Severity: Low
+
+2. **flag_x2_extreme** — Extreme Profitability Loss
+   - Trigger: X2 < -0.5 (retained earnings loss > 50% assets)
+   - Count: 32 rows (0.5%)
+   - Severity: Medium
+
+3. **flag_x3_extreme** — Extreme Operating Loss
+   - Trigger: X3 < -0.3 (EBIT loss > 30% assets)
+   - Count: 71 rows (1.0%)
+   - Severity: Medium
+
+4. **flag_x4_spike** — Market Valuation Spike
+   - Trigger: X4 > company_specific_cap (1.5x historical median)
+   - Count: 566 rows (8.1%) - Most common
+   - Severity: Medium
+
+5. **flag_x4_consistently_high** — Consistently High Valuation
+   - Trigger: company_median(X4) > 50
+   - Count: 392 rows (5.6%)
+   - Severity: Low
+
+6. **flag_x5_negative** — DATA ERROR: Negative Revenue
+   - Trigger: X5 < 0 (impossible)
+   - Count: 2 rows (0.03%)
+   - Severity: Critical - Requires data fix
+
+7. **flag_leverage_extreme** — INSOLVENT: TL > TA
+   - Trigger: Leverage > 1.0 (liabilities exceed assets)
+   - Count: 12 rows (0.2%)
+   - Severity: Critical
+
+8. **flag_data_quality_issues** — Summary Flag
+   - Meaning: Count of all issues (0-7)
+   - Count: 639 rows have 1+ issues (9.1% of data)
+
+### Where Flags Appear
+
+- Main data file: `data/filtered/merged_filtered.csv`
+- All classification outputs: `data/filtered/classified/*.csv`
+- Any exported dataset via analyze_data_quality.py
+
+All 8 flags automatically flow through entire pipeline.
+
+---
+
+## Commands Reference
+
+### Data Quality Analysis
+
+Generate comprehensive report on all flags:
+
+```bash
+python3 analyze_data_quality.py --data-dir ./data
+```
+
+Focus on specific flag with detailed analysis:
+
+```bash
+python3 analyze_data_quality.py --data-dir ./data --focus flag_x4_spike
+python3 analyze_data_quality.py --data-dir ./data --focus flag_x5_negative
+python3 analyze_data_quality.py --data-dir ./data --focus flag_leverage_extreme
+```
+
+Export flagged records to CSV:
+
+```bash
+python3 analyze_data_quality.py --data-dir ./data --export-flagged flagged_data.csv
+python3 analyze_data_quality.py --data-dir ./data --export-clean clean_data.csv
+python3 analyze_data_quality.py --data-dir ./data --export-flag flag_x5_negative --output data_errors.csv
+python3 analyze_data_quality.py --data-dir ./data --export-flag flag_leverage_extreme --output insolvency.csv
+```
+
+### Pipeline Commands
+
+Run full pipeline:
+
+```bash
+python3 apply_analytics.py
+python3 classify_data.py
+python3 report_summary.py
+```
+
+Run only apply_analytics (adds normalization and all 8 flags):
+
+```bash
+python3 apply_analytics.py
+```
+
+Creates 16 new columns:
+- X1_Normalized through X5_Normalized
+- X4_Cap
+- AltmanZScore_Normalized
+- 8 flag columns (flag_x1_extreme through flag_data_quality_issues)
+
+### Using Flags in Python
+
+```python
+import pandas as pd
+
+df = pd.read_csv('data/filtered/merged_filtered.csv')
+
+# Get clean data only
+clean_df = df[df['flag_data_quality_issues'] == 0]
+print(f"Clean records: {len(clean_df)}")  # 6,349
+
+# Find data errors
+errors = df[df['flag_x5_negative'] > 0]
+print(f"Data errors: {len(errors)}")  # 2
+
+# Find market spikes
+spikes = df[df['flag_x4_spike'] > 0]
+print(f"Market spikes: {len(spikes)}")  # 566
+
+# Find insolvent companies
+insolvent = df[df['flag_leverage_extreme'] > 0]
+print(f"Insolvent: {len(insolvent)}")  # 12
+```

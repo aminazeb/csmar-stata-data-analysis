@@ -85,6 +85,9 @@ OUTPUT_SOURCE_CANDIDATES = {
     "IncomeEntropyIndex": ["mc_degree_IncomeEntropyIndex", "IncomeEntropyIndex"],
 }
 
+SALES_CLASS_VALUES = {"1", "2", "4"}
+PRODUCT_CLASS_VALUES = {"3"}
+
 
 def pick_first(df: pd.DataFrame, candidates: Sequence[str], default: Optional[str] = None) -> Optional[str]:
     for c in candidates:
@@ -104,12 +107,41 @@ def normalize_code(series: pd.Series) -> pd.Series:
     return series.astype(str).str.replace(r"\.0$", "", regex=True)
 
 
+def normalize_classification_standard(series: pd.Series) -> pd.Series:
+    out = series.astype("string").str.replace(r"\.0$", "", regex=True)
+    out = out.fillna("2")
+    out = out.replace({"<NA>": "2", "nan": "2", "None": "2", "": "2"})
+    return out.astype(str)
+
+
+def normalize_state_type_code(series: pd.Series) -> pd.Series:
+    out = series.astype("string").str.replace(r"\.0$", "", regex=True)
+    out = out.replace({"<NA>": pd.NA, "nan": pd.NA, "None": pd.NA, "": pd.NA})
+    return out
+
+
+def resolve_state_type_code(df: pd.DataFrame, source_col: str) -> pd.Series:
+    out = normalize_state_type_code(df[source_col])
+    key_cols = ["Symbol", "EndDate"]
+    if not all(c in df.columns for c in key_cols):
+        return out.fillna("2").astype(str)
+
+    temp = df[key_cols].copy()
+    temp["__state"] = out
+    has_parent = temp.groupby(key_cols)["__state"].transform(lambda s: (s == "2").any())
+
+    # Only infer missing state as parent when no parent statement exists for that company-year.
+    inferred = pd.Series(pd.NA, index=out.index, dtype="string")
+    inferred[~has_parent] = "2"
+    return out.where(out.notna(), inferred).astype("string")
+
+
 def load_merged(data_dir: Path) -> pd.DataFrame:
-    candidates = [data_dir / "filtered" / "merged_filtered.csv", data_dir / "merged_filtered.csv"]
+    candidates = [data_dir / "data" / "filtered" / "merged_filtered.csv", data_dir / "filtered" / "merged_filtered.csv", data_dir / "merged_filtered.csv"]
     for p in candidates:
         if p.exists():
             return pd.read_csv(p)
-    raise FileNotFoundError("merged_filtered.csv not found in data-dir or data-dir/filtered")
+    raise FileNotFoundError("merged_filtered.csv not found in data-dir, data-dir/data/filtered, or data-dir/filtered")
 
 
 def parse_years(values: Optional[Sequence[str]]) -> Optional[set[int]]:
@@ -192,7 +224,7 @@ def build_product_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int]
 
     working = populate_output_columns(working)
     working = backfill_company_year_fields(working, PRODUCT_COLUMNS)
-    working["StateTypeCode"] = normalize_code(working[state_col]) if state_col in working.columns else None
+    working["StateTypeCode"] = resolve_state_type_code(working, state_col) if state_col in working.columns else "2"
     for k, v in meta.items():
         working[k] = v
 
@@ -225,8 +257,9 @@ def build_div_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int, int
 
     working = populate_output_columns(working)
     working = backfill_company_year_fields(working, DIV_COLUMNS)
-    working["ClassificationStandard"] = normalize_code(working[class_col]) if class_col in working.columns else None
-    working["StateTypeCode"] = normalize_code(working[state_col]) if state_col in working.columns else None
+    working["ClassificationStandard"] = normalize_classification_standard(working[class_col]) if class_col in working.columns else "2"
+    working["StateTypeCode"] = resolve_state_type_code(working, state_col) if state_col in working.columns else "2"
+    working["ClassificationStandard"] = working["ClassificationStandard"].replace({"1": "2", "4": "2"})
     for k, v in meta.items():
         working[k] = v
 
@@ -255,9 +288,9 @@ def build_div_outputs(df: pd.DataFrame, output_dir: Path) -> Tuple[int, int, int
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description="Generate classification outputs from merged_filtered.csv")
-    parser.add_argument("--data-dir", type=Path, default=Path.cwd(), help="Base data directory (looks for filtered/merged_filtered.csv)")
-    parser.add_argument("--output-dir", type=Path, default=None, help="Directory to write outputs (default: <data-dir>/filtered/classified)")
+    parser = argparse.ArgumentParser(description="Generate classification outputs from merged_filtered.csv (all columns preserved, including normalized metrics)")
+    parser.add_argument("--data-dir", type=Path, default=Path.cwd(), help="Base data directory (looks for data/filtered/merged_filtered.csv or filtered/merged_filtered.csv)")
+    parser.add_argument("--output-dir", type=Path, default=None, help="Directory to write outputs (default: <data-dir>/data/filtered/classified or <data-dir>/filtered/classified)")
     parser.add_argument(
         "--years",
         nargs="+",
@@ -267,7 +300,15 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parser.parse_args(argv)
 
     base_dir = args.data_dir.resolve()
-    output_dir = (args.output_dir or (base_dir / "filtered" / "classified")).resolve()
+    # Infer output dir based on where merged_filtered.csv was found
+    if args.output_dir:
+        output_dir = args.output_dir.resolve()
+    else:
+        # Check where merged file exists to determine output location
+        if (base_dir / "data" / "filtered" / "merged_filtered.csv").exists():
+            output_dir = (base_dir / "data" / "filtered" / "classified").resolve()
+        else:
+            output_dir = (base_dir / "filtered" / "classified").resolve()
 
     merged = load_merged(base_dir)
     target_years = parse_years(args.years)

@@ -23,11 +23,11 @@ REQUIRED_COLUMNS = {
 
 
 def load_merged(data_dir: Path) -> tuple[pd.DataFrame, Path]:
-    candidates: Sequence[Path] = [data_dir / "filtered" / "merged_filtered.csv", data_dir / "merged_filtered.csv"]
+    candidates: Sequence[Path] = [data_dir / "data" / "filtered" / "merged_filtered.csv", data_dir / "filtered" / "merged_filtered.csv", data_dir / "merged_filtered.csv"]
     for path in candidates:
         if path.exists():
             return pd.read_csv(path), path
-    raise FileNotFoundError("merged_filtered.csv not found in data-dir or data-dir/filtered")
+    raise FileNotFoundError("merged_filtered.csv not found in data-dir, data-dir/data/filtered, or data-dir/filtered")
 
 
 def safe_div(numer: pd.Series, denom: pd.Series) -> pd.Series:
@@ -42,6 +42,8 @@ def normalize_symbol(series: pd.Series) -> pd.Series:
 
 def load_ocscore(data_dir: Path) -> Optional[DataFrame]:
     candidates = [
+        data_dir / "data" / "filtered" / "ocscore_filtered.xlsx",
+        data_dir / "data" / "filtered" / "ocscore_filtered.csv",
         data_dir / "filtered" / "ocscore_filtered.xlsx",
         data_dir / "filtered" / "ocscore_filtered.csv",
         data_dir / "ocscore.xlsx",
@@ -51,7 +53,7 @@ def load_ocscore(data_dir: Path) -> Optional[DataFrame]:
         if path.exists():
             if path.suffix.lower() == ".csv":
                 return pd.read_csv(path)
-            return pd.read_excel(path, header=None if path.name == "ocscore.xlsx" else 0)
+            return pd.read_excel(path, header=0)
     return None
 
 
@@ -65,19 +67,12 @@ def excel_col_letter(idx: int) -> str:
 
 
 def normalize_ocscore(df: DataFrame) -> DataFrame:
-    # Detect header row if raw ocscore.xlsx (headerless)
-    if "Symbol" not in df.columns:
-        # Try to find row containing Symbol marker
-        symbol_rows = [i for i, row in df.iterrows() if (row == "Symbol").any()]
-        header_idx = symbol_rows[0] if symbol_rows else 0
-        df = pd.read_excel(df.attrs.get("_source_path"), header=header_idx) if "_source_path" in df.attrs else df
-
-    # Drop unnamed boilerplate columns
-    keep_cols = [c for c in df.columns if not pd.isna(c) and not str(c).startswith("Unnamed")]
-    df = df.loc[:, keep_cols].copy()
+    # Extract only Symbol, Date, and ocscore_* columns
+    keep_cols = ["Symbol", "Date"] + [c for c in df.columns if str(c).startswith("ocscore_")]
+    df = df[keep_cols].copy()
 
     if "Symbol" in df.columns:
-        df["Symbol"] = normalize_symbol(df["Symbol"])
+        df["Symbol"] = df["Symbol"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     if "Date" in df.columns:
         df["Date"] = pd.to_numeric(df["Date"], errors="coerce")
 
@@ -87,11 +82,94 @@ def normalize_ocscore(df: DataFrame) -> DataFrame:
     else:
         grouped = df
 
-    # Prefix non-key columns to avoid clashes
-    key_cols = {"Symbol", "Date"}
-    rename_map = {c: f"ocscore_{c}" for c in grouped.columns if c not in key_cols}
-    grouped = grouped.rename(columns=rename_map)
     return grouped
+
+
+def normalize_all_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize outliers across all Z-Score components.
+    Handles data errors and extreme values without removing data.
+    Adds diagnostic flags for data quality tracking.
+    
+    Returns dataframe with:
+    - Original columns (preserved)
+    - Normalized columns (X1_Normalized, X2_Normalized, etc.)
+    - Diagnostic flags (flag_x1_extreme, flag_x4_spike, etc.)
+    - AltmanZScore_Normalized (corrected formula with normalized components)
+    """
+    
+    df = df.copy()
+    
+    # ────────────────────────────────────────────────────────────
+    # X1: Working Capital Ratio
+    # ────────────────────────────────────────────────────────────
+    df["flag_x1_extreme"] = (df["X1_WorkingCapitalToTotalAssets"].abs() > 2.0).astype(int)
+    df["X1_Normalized"] = df["X1_WorkingCapitalToTotalAssets"].clip(lower=-1.0, upper=2.0)
+    
+    # ────────────────────────────────────────────────────────────
+    # X2: Profitability Ratio (Net Profit / Total Assets)
+    # ────────────────────────────────────────────────────────────
+    df["flag_x2_extreme"] = (df["X2_RetainedEarningsToTotalAssets"] < -0.5).astype(int)
+    df["X2_Normalized"] = df["X2_RetainedEarningsToTotalAssets"].clip(lower=-0.5)
+    x2_p99 = df["X2_RetainedEarningsToTotalAssets"].quantile(0.99)
+    df["X2_Normalized"] = df["X2_Normalized"].clip(upper=x2_p99)
+    
+    # ────────────────────────────────────────────────────────────
+    # X3: EBIT Efficiency Ratio
+    # ────────────────────────────────────────────────────────────
+    df["flag_x3_extreme"] = (df["X3_EBITToTotalAssets"] < -0.3).astype(int)
+    df["X3_Normalized"] = df["X3_EBITToTotalAssets"].clip(lower=-0.3)
+    x3_p99 = df["X3_EBITToTotalAssets"].quantile(0.99)
+    df["X3_Normalized"] = df["X3_Normalized"].clip(upper=x3_p99)
+    
+    # ────────────────────────────────────────────────────────────
+    # X4: Market Value / Liabilities (Company-specific cap)
+    # ────────────────────────────────────────────────────────────
+    # Calculate historical median (2018-2022 complete data years)
+    historical_median = df[df["Date"] <= 2022].groupby("Symbol")["X4_MarketValueToTotalLiabilities"].median()
+    df["X4_Cap"] = df["Symbol"].map(lambda s: historical_median.get(s, 10) * 1.5)
+    df["flag_x4_spike"] = (df["X4_MarketValueToTotalLiabilities"] > df["X4_Cap"]).astype(int)
+    df["flag_x4_consistently_high"] = (df["X4_Cap"] > 50).astype(int)  # Flag extremely high valuations
+    df["X4_Normalized"] = df[["X4_MarketValueToTotalLiabilities", "X4_Cap"]].min(axis=1)
+    
+    # ────────────────────────────────────────────────────────────
+    # X5: Asset Turnover (Revenue / Total Assets)
+    # ────────────────────────────────────────────────────────────
+    # Flag data errors: negative revenue is impossible
+    df["flag_x5_negative"] = (df["X5_SalesToTotalAssets"] < 0).astype(int)
+    df["X5_Normalized"] = df["X5_SalesToTotalAssets"].clip(lower=0)  # Can't be negative
+    x5_p99 = df["X5_Normalized"].quantile(0.99)
+    df["X5_Normalized"] = df["X5_Normalized"].clip(upper=x5_p99)
+    
+    # ────────────────────────────────────────────────────────────
+    # Leverage: Total Liabilities / Total Assets
+    # ────────────────────────────────────────────────────────────
+    df["flag_leverage_extreme"] = (df["Leverage"] > 1.0).astype(int)  # Insolvent on paper
+    df["Leverage_Normalized"] = df["Leverage"].clip(upper=1.0)  # Can't exceed 1.0
+    
+    # ────────────────────────────────────────────────────────────
+    # Calculate Normalized Z-Score
+    # Uses fixed X5 coefficient (1.0 instead of 0.999)
+    # ────────────────────────────────────────────────────────────
+    df["AltmanZScore_Normalized"] = (
+        1.2 * df["X1_Normalized"] +
+        1.4 * df["X2_Normalized"] +
+        3.3 * df["X3_Normalized"] +
+        0.6 * df["X4_Normalized"] +
+        1.0 * df["X5_Normalized"]
+    )
+    
+    # ────────────────────────────────────────────────────────────
+    # Data Quality Summary
+    # Count total flags per row to identify problematic data
+    # ────────────────────────────────────────────────────────────
+    df["flag_data_quality_issues"] = (
+        df["flag_x1_extreme"] + df["flag_x2_extreme"] +
+        df["flag_x3_extreme"] + df["flag_x5_negative"] +
+        df["flag_leverage_extreme"] + df["flag_x4_spike"]
+    )
+    
+    return df
 
 
 def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
@@ -123,7 +201,7 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     x4 = safe_div(mv, tl)
     x5 = safe_div(sales, ta)
 
-    z = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 0.999 * x5
+    z = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5
 
     out = pd.DataFrame()
     out["Symbol"] = df.get("Symbol")
@@ -145,6 +223,9 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     growth_frame = growth_frame.sort_values(["Symbol", "Date"])
     growth_frame["SalesGrowth"] = growth_frame.groupby("Symbol")[["sales"]].pct_change()
     out["SalesGrowth"] = growth_frame.sort_index()["SalesGrowth"]
+
+    # Apply comprehensive normalization to handle outliers
+    out = normalize_all_metrics(out)
 
     return out
 
@@ -206,7 +287,7 @@ def add_inline_formula_columns(df: pd.DataFrame) -> pd.DataFrame:
         if x1c and x2c and x3c and x4c and x5c:
             add_col(
                 "AltmanZScore_formula",
-                lambda r: f"=1.2*{x1c}{r}+1.4*{x2c}{r}+3.3*{x3c}{r}+0.6*{x4c}{r}+0.999*{x5c}{r}",
+                lambda r: f"=1.2*{x1c}{r}+1.4*{x2c}{r}+3.3*{x3c}{r}+0.6*{x4c}{r}+1.0*{x5c}{r}",
             )
 
         add_col("FirmSize_LogTotalAssets_formula", lambda r: f"=IF({ta}{r}>0,LN({ta}{r}),\"\")")
@@ -273,7 +354,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     # Attach ocscore data after merged file is already collapsed to company-year
     oc_df = load_ocscore(base_dir)
     if oc_df is not None:
-        oc_df.attrs["_source_path"] = next((p for p in [base_dir / "filtered" / "ocscore_filtered.xlsx", base_dir / "ocscore.xlsx"] if p.exists()), None)
+        oc_df.attrs["_source_path"] = next((p for p in [base_dir / "data" / "filtered" / "ocscore_filtered.xlsx", base_dir / "ocscore.xlsx"] if p.exists()), None)
         oc_df = normalize_ocscore(oc_df)
         # Drop any existing ocscore_* columns so we can refresh from source
         existing_oc = [c for c in merged_df.columns if c.startswith("ocscore_")]
